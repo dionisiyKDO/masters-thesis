@@ -84,6 +84,7 @@ class Classifier:
         
         return {}
 
+
     def setup_data_generators(self, 
                             train_dir: str,
                             test_dir: str,
@@ -149,6 +150,112 @@ class Classifier:
         
         return steps_per_epoch, validation_steps
 
+    def build_model(self) -> bool:
+        """Build the specified model architecture."""
+        try:
+            if self.model_name == 'SimpleNet':
+                self.model = Sequential([
+                    Conv2D(filters=16, kernel_size=3, activation='relu', padding='same', input_shape=self.img_shape),
+                    MaxPooling2D(pool_size=2),
+                    Conv2D(filters=32, kernel_size=3, activation='relu'),
+                    MaxPooling2D(pool_size=2),
+                    Flatten(),
+                    Dense(64, activation='relu'),
+
+                    Dense(self.num_classes, activation='softmax')
+                ])
+            
+            elif self.model_name == 'OwnV1':
+                self.model = Sequential([
+                    Conv2D(256, (12,12), strides=(5,5), activation='relu', input_shape=self.img_shape),
+                    MaxPooling2D((3,3), strides=(2,2)),
+                    BatchNormalization(),
+                    Conv2D(512, (6,6), strides=(2,2), activation='relu', padding='same'),
+                    MaxPooling2D((3,3), strides=(2,2)),
+                    BatchNormalization(),
+                    Conv2D(256, (3,3), activation='relu', padding='same'),
+                    MaxPooling2D((3,3), strides=(2,2)),
+                    BatchNormalization(),
+                    Flatten(),
+                    Dense(4096, activation='relu'),
+                    Dropout(0.5),
+                    Dense(self.num_classes, activation='softmax')
+                ])
+            
+            elif self.model_name == 'OwnV2':
+                self.model = Sequential([
+                    Conv2D(64, (12,12), strides=(5,5), activation='relu', input_shape=self.img_shape),
+                    MaxPooling2D((3,3), strides=(2,2)),
+                    BatchNormalization(),
+                    Conv2D(128, (6,6), strides=(2,2), activation='relu', padding='same'),
+                    MaxPooling2D((3,3), strides=(2,2)),
+                    BatchNormalization(),
+                    Conv2D(256, (3,3), activation='relu', padding='same'),
+                    MaxPooling2D((3,3), strides=(2,2)),
+                    BatchNormalization(),
+                    Flatten(),
+                    Dense(1024, activation='relu'),
+                    Dropout(0.5),
+                    Dense(self.num_classes, activation='softmax')
+                ])
+            
+            elif self.model_name == 'AlexNet':
+                self.model = Sequential([
+                    Conv2D(96, (11,11), strides=(4,4), activation='relu', input_shape=self.img_shape),
+                    MaxPooling2D((3,3), strides=(2,2)),
+                    BatchNormalization(),
+                    Conv2D(256, (5,5), activation='relu', padding='same'),
+                    MaxPooling2D((3,3), strides=(2,2)),
+                    BatchNormalization(),
+                    Conv2D(384, (3,3), activation='relu', padding='same'),
+                    Conv2D(384, (3,3), activation='relu', padding='same'),
+                    Conv2D(256, (3,3), activation='relu', padding='same'),
+                    MaxPooling2D((3,3), strides=(2,2)),
+                    BatchNormalization(),
+                    Flatten(),
+                    Dense(4096, activation='relu'),
+                    Dropout(0.5),
+                    Dense(4096, activation='relu'),
+                    Dropout(0.5),
+                    Dense(self.num_classes, activation='softmax')
+                ])
+            
+            # Transfer learning models
+            else:
+                base_models = {
+                    'VGG16': tf.keras.applications.VGG16,
+                    'VGG19': tf.keras.applications.VGG19,
+                    'ResNet50': tf.keras.applications.ResNet50,
+                    'InceptionV3': tf.keras.applications.InceptionV3,
+                    'EfficientNetV2': tf.keras.applications.EfficientNetV2B0,
+                    'InceptionResNetV2': tf.keras.applications.InceptionResNetV2
+                }
+                
+                if self.model_name in base_models:
+                    base_model = base_models[self.model_name](
+                        weights='imagenet',
+                        include_top=False,
+                        input_shape=self.img_shape
+                    )
+                    base_model.trainable = False
+                    
+                    self.model = Sequential([
+                        base_model,
+                        GlobalAveragePooling2D(),
+                        Dense(128, activation='relu'),
+                        Dropout(0.5),
+                        Dense(self.num_classes, activation='softmax')
+                    ])
+                else:
+                    print(f"Unknown model: {self.model_name}")
+                    return False
+            
+            return True
+            
+        except Exception as e:
+            print(f"Error building model: {e}")
+            return False
+    
     def load_model_from_checkpoint(self, checkpoint_path: str):
         """
         Load model from a checkpoint file.
@@ -333,131 +440,3 @@ class Classifier:
 
         fig.update_layout(title='Data Distribution', grid={'rows': 1, 'columns': 3})
         fig.show()
-
-
-    def _get_model(self):
-        """ Create a convolutional neural network model based on the specified architecture. """
-        if   self.network_name == 'test':
-            self.model = Sequential([
-                Conv2D(filters=16, kernel_size=3, activation='relu', padding='same', input_shape=self.img_shape),
-                MaxPooling2D(pool_size=2),
-                Conv2D(filters=32, kernel_size=3, activation='relu'),
-                MaxPooling2D(pool_size=2),
-                Flatten(),
-                Dense(64, activation='relu'),
-
-                Dense(self.num_classes,activation='softmax')
-            ])
-        elif self.network_name == 'VGG16':
-            base_model = tf.keras.applications.VGG16(weights='imagenet', include_top=False, input_shape=self.img_shape)
-            base_model.trainable = False
-            self.model = tf.keras.Sequential([
-                base_model,
-                GlobalAveragePooling2D(),
-                Dense(self.num_classes, activation='softmax'),
-            ])
-        elif self.network_name == 'VGG19':
-            base_model = tf.keras.applications.VGG19(weights='imagenet', include_top=False, input_shape=self.img_shape)
-            base_model.trainable = False
-            self.model = tf.keras.Sequential([
-                base_model,
-                GlobalAveragePooling2D(),
-                Dense(self.num_classes, activation='softmax'),
-            ])
-        elif self.network_name == 'AlexNet':
-            self.model = tf.keras.Sequential([
-                Conv2D(filters=96, kernel_size=(11,11), strides=(4,4), activation='relu', input_shape=self.img_shape),
-                MaxPooling2D(pool_size=(3,3), strides=(2,2)),
-                BatchNormalization(),
-
-                Conv2D(filters=256, kernel_size=(5,5), strides=(1,1), activation='relu', padding="same"),
-                MaxPooling2D(pool_size=(3,3), strides=(2,2)),
-                BatchNormalization(),
-
-                Conv2D(filters=384, kernel_size=(3,3), strides=(1,1), activation='relu', padding="same"),
-                Conv2D(filters=384, kernel_size=(3,3), strides=(1,1), activation='relu', padding="same"),
-                Conv2D(filters=256, kernel_size=(3,3), strides=(1,1), activation='relu', padding="same"),
-                MaxPooling2D(pool_size=(3,3), strides=(2,2)),
-                BatchNormalization(),
-
-                Flatten(),
-                Dense(4096,activation='relu'),
-                Dropout(0.5),
-                Dense(4096,activation='relu'),
-                Dropout(0.5),
-                Dense(self.num_classes,activation='softmax')  
-            ])
-        
-        elif self.network_name == 'InceptionV3':
-            base_model = tf.keras.applications.InceptionV3(weights='imagenet', include_top=False, input_shape=self.img_shape)
-            base_model.trainable = False
-            self.model = tf.keras.Sequential([
-                base_model,
-                GlobalAveragePooling2D(),
-                Dense(self.num_classes, activation='softmax'),
-            ])
-        elif self.network_name == 'EfficientNetV2':
-            base_model = tf.keras.applications.EfficientNetV2B0(weights='imagenet', include_top=False, input_shape=self.img_shape)
-            base_model.trainable = False
-            self.model = tf.keras.Sequential([
-                base_model,
-                GlobalAveragePooling2D(),
-                Dense(self.num_classes, activation='softmax'),
-            ])
-        elif self.network_name == 'ResNet50':
-            base_model = tf.keras.applications.ResNet50(weights='imagenet', include_top=False, input_shape=self.img_shape)
-            base_model.trainable = False
-            self.model = tf.keras.Sequential([
-                base_model,
-                GlobalAveragePooling2D(),
-                Dense(self.num_classes, activation='softmax'),
-            ])
-        elif self.network_name == 'InceptionResNetV2':
-            base_model = tf.keras.applications.inception_resnet_v2.InceptionResNetV2(weights='imagenet', include_top=False, input_shape=self.img_shape)
-            base_model.trainable = False
-            self.model = tf.keras.Sequential([
-                base_model,
-                GlobalAveragePooling2D(),
-                Dense(self.num_classes, activation='softmax'),
-            ])
-        
-        elif self.network_name == 'OwnV1':
-            self.model = tf.keras.Sequential([
-                Conv2D(filters=256, kernel_size=(12,12), strides=(5,5), activation='relu', input_shape=self.img_shape),
-                MaxPooling2D(pool_size=(3,3), strides=(2,2)),
-                BatchNormalization(),
-
-                Conv2D(filters=512, kernel_size=(6,6), strides=(2,2), activation='relu', padding="same"),
-                MaxPooling2D(pool_size=(3,3), strides=(2,2)),
-                BatchNormalization(),
-
-                Conv2D(filters=256, kernel_size=(3,3), strides=(1,1), activation='relu', padding="same"),
-                MaxPooling2D(pool_size=(3,3), strides=(2,2)),
-                BatchNormalization(),
-
-                Flatten(),
-                Dense(4096, activation='relu'),
-                Dropout(0.5),
-                Dense(self.num_classes,activation='softmax')
-            ])
-        elif self.network_name == 'OwnV2':
-            self.model = Sequential([
-                Conv2D(filters=64, kernel_size=(12,12), strides=(5,5), activation='relu', input_shape=self.img_shape),
-                MaxPooling2D(pool_size=(3,3), strides=(2,2)),
-                BatchNormalization(),
-
-                Conv2D(filters=128, kernel_size=(6,6), strides=(2,2), activation='relu', padding="same"),
-                MaxPooling2D(pool_size=(3,3), strides=(2,2)),
-                BatchNormalization(),
-
-                Conv2D(filters=256, kernel_size=(3,3), strides=(1,1), activation='relu', padding="same"),
-                MaxPooling2D(pool_size=(3,3), strides=(2,2)),
-                BatchNormalization(),
-
-                Flatten(),
-                Dense(1028, activation='relu'),
-                Dropout(0.5),
-                Dense(self.num_classes,activation='softmax')
-            ])
-
-        else: self.model = None
