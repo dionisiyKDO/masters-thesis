@@ -267,27 +267,6 @@ class Classifier:
         self._get_model()
         self.model.load_weights(checkpoint_path)
 
-    def classify_image(self, image_path: str):
-        """
-        Classify an image using a trained model.
-
-        Parameters:
-        - image_path (str): Path to the image file.
-
-        Returns:
-        - str: Predicted class label.
-        """
-        img = tf.keras.preprocessing.image.load_img(image_path, target_size=self.img_shape)
-        img_array = tf.keras.preprocessing.image.img_to_array(img)
-        img_array = tf.expand_dims(img_array, 0)
-        img_array /= 255.0 # normalize
-
-        predictions = self.model.predict(img_array)
-        predicted_class_index = np.argmax(predictions[0])
-        predicted_class_label = [label for label, index in self.class_labels.items() if index == predicted_class_index][0]
-
-        return predicted_class_label
-
 
     def train(self, 
               train_dir: str,
@@ -406,6 +385,35 @@ class Classifier:
         print(f"Training time: {training_time:.2f} seconds")
         
         return results
+    
+    def predict(self, image_path: str) -> Tuple[str, float, Dict[str, float]]:
+        """
+        Predict class for a single image.
+        
+        Args:
+            image_path: Path to image file
+            
+        Returns:
+            Tuple of (predicted_class, confidence, all_probabilities)
+        """
+        if self.model is None:
+            raise ValueError("Model not trained or loaded")
+        
+        # Load and preprocess image
+        img = tf.keras.preprocessing.image.load_img(image_path, target_size=self.img_size)
+        img_array = tf.keras.preprocessing.image.img_to_array(img)
+        img_array = np.expand_dims(img_array, axis=0) / 255.0
+        
+        # Make prediction
+        predictions = self.model.predict(img_array, verbose=0)[0]
+        predicted_idx = np.argmax(predictions)
+        predicted_class = self.class_labels[predicted_idx]
+        confidence = predictions[predicted_idx]
+        
+        # Create probability dictionary
+        probabilities = {self.class_labels[i]: prob for i, prob in enumerate(predictions)}
+        
+        return predicted_class, confidence, probabilities
     
 
     def plot_training_history(self):
