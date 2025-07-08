@@ -256,17 +256,6 @@ class Classifier:
             print(f"Error building model: {e}")
             return False
     
-    def load_model_from_checkpoint(self, checkpoint_path: str):
-        """
-        Load model from a checkpoint file.
-
-        Parameters:
-        - checkpoint_path (str): Path to the checkpoint file.
-        """
-
-        self._get_model()
-        self.model.load_weights(checkpoint_path)
-
 
     def train(self, 
               train_dir: str,
@@ -414,6 +403,19 @@ class Classifier:
         probabilities = {self.class_labels[i]: prob for i, prob in enumerate(predictions)}
         
         return predicted_class, confidence, probabilities
+    
+    def load_model(self, model_path: str):
+        """Load a saved model."""
+        self.model = tf.keras.models.load_model(model_path)
+        print(f"Model loaded from {model_path}")
+    
+    def save_model(self, model_path: str):
+        """Save the current model."""
+        if self.model is None:
+            print("No model to save")
+            return
+        self.model.save(model_path)
+        print(f"Model saved to {model_path}")
     
 
     def plot_training_history(self):
