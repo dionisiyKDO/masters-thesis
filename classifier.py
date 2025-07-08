@@ -535,3 +535,29 @@ class Classifier:
 
         fig.update_layout(title='Data Distribution', grid={'rows': 1, 'columns': 3})
         fig.show()
+
+
+if __name__ == "__main__":
+    # Initialize classifier
+    classifier = Classifier(
+        model_name='AlexNet',
+        img_size=(150, 150),
+        data_dir='./flattened-limited'
+    )
+    
+    # Train the modelc
+    results = classifier.train(
+        train_dir='./flattened-limited/train',
+        test_dir='./flattened-limited/valid',
+        epochs=50,
+        batch_size=32,
+        learning_rate=0.001
+    )
+    
+    # Plot results
+    classifier.plot_training_history()
+    classifier.plot_confusion_matrix()
+    
+    # Make predictions
+    prediction, confidence, probabilities = classifier.predict('./test_image.jpg')
+    print(f"Predicted: {prediction} (confidence: {confidence:.2f})")
