@@ -1,44 +1,55 @@
-import os, random, cv2, time, keras, datetime
-from PIL import Image
-
+import os
+import time
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from math import ceil
+from pathlib import Path
+from typing import Dict, List, Optional, Tuple, Union
+
+import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
-import matplotlib.pyplot as plt
+
 from sklearn.metrics import confusion_matrix, classification_report
-
-from keras.preprocessing.image import ImageDataGenerator
-from keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from keras.optimizers import Adam, Adamax, SGD
-from keras import regularizers
-
-from keras.models import Sequential
-from keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
-from keras.layers import BatchNormalization, MaxPooling2D, GlobalAveragePooling2D
-# import app.globals as globals
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam, Adamax, SGD
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import (
+    Conv2D, MaxPooling2D, Flatten, Dense, Dropout,
+    BatchNormalization, GlobalAveragePooling2D
+)
 
 
-class MRIImageClassifier:
-    def __init__(self, network_name='OwnV2'):
-        self.avaible_network_names = ['OwnV2', 'OwnV1', 'test', 'VGG16', 'VGG19', 'AlexNet', 'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2' ]
-        self.network_name = network_name
+class Classifier:
+    
+    AVAILABLE_MODELS = [
+        'OwnV2', 'OwnV1', 'SimpleNet', 'VGG16', 'VGG19', 'AlexNet', 
+        'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2'
+    ]
+    
+    def __init__(self, 
+                 model_name: str = 'OwnV2',
+                 img_size: Tuple[int, int] = (150, 150),
+                 data_dir: Optional[str] = None,
+                 class_labels: Optional[Dict[str, int]] = None):
+
+        self.model_name = model_name
+        self.img_size = img_size
+        self.img_shape = (*img_size, 3)
+        self.data_dir = data_dir
+        
+        # Auto-detect classes from directory structure or use provided labels
+        self.class_labels = class_labels or self._detect_classes()
+        self.num_classes = len(self.class_labels)
+        
         self.model = None
         self.history = None
-
-        self.img_size = (150, 150)
-        self.img_shape = (self.img_size[0], self.img_size[1], 3)
-
-        self.class_labels = {
-            'glioma': 0, 
-            'meningioma': 1, 
-            'notumor': 2, 
-            'pituitary': 3, 
-        }
-        self.num_classes = len(self.class_labels.keys())
+        self.train_generator = None
+        self.test_generator = None
         
-        self.setup_environment()
+        self._setup_environment()
 
     def setup_environment(self):
         """Configure GPU settings and logging level."""
