@@ -419,25 +419,82 @@ class Classifier:
     
 
     def plot_training_history(self):
-        if self.history == None: 
-            print('=== No history to plot ===')
+        """Plot training history."""
+        if self.history is None:
+            print("No training history available")
             return
+        
         history = self.history.history
-        acc_epochs = pd.DataFrame({'train': history['acc'], 'val': history['val_acc']})
-        loss_epochs = pd.DataFrame({'train': history['loss'], 'val': history['val_loss']})
-
-        px.line(acc_epochs, x=acc_epochs.index, y=acc_epochs.columns[0::], title=f'Training and Evaluation Accuracy every Epoch for "{self.network_name}"', markers=True).show()
-        px.line(loss_epochs, x=loss_epochs.index, y=loss_epochs.columns[0::], title=f'Training and Evaluation Loss every Epoch for "{self.network_name}"', markers=True).show()
-
-    def plot_confusion_matrix(self, test_generator):
-        if self.model == None: 
-            print('=== No model to test ===')
+        epochs = range(1, len(history['loss']) + 1)
+        
+        # Create subplots
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        
+        # Plot accuracy
+        ax1.plot(epochs, history['accuracy'], 'b-', label='Training Accuracy')
+        ax1.plot(epochs, history['val_accuracy'], 'r-', label='Validation Accuracy')
+        ax1.set_title('Model Accuracy')
+        ax1.set_xlabel('Epoch')
+        ax1.set_ylabel('Accuracy')
+        ax1.legend()
+        ax1.grid(True)
+        
+        # Plot loss
+        ax2.plot(epochs, history['loss'], 'b-', label='Training Loss')
+        ax2.plot(epochs, history['val_loss'], 'r-', label='Validation Loss')
+        ax2.set_title('Model Loss')
+        ax2.set_xlabel('Epoch')
+        ax2.set_ylabel('Loss')
+        ax2.legend()
+        ax2.grid(True)
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def plot_confusion_matrix(self, normalize: bool = False):
+        """Plot confusion matrix."""
+        if self.model is None or self.test_generator is None:
+            print("Model or test data not available")
             return
-        y_pred = self.model.predict(test_generator)
-        y_pred = np.argmax(y_pred, axis=1)
-        y_test = test_generator.classes
-        cm = confusion_matrix(y_test, y_pred)
-        print(cm)
+        
+        # Get predictions
+        y_pred = self.model.predict(self.test_generator, verbose=0)
+        y_pred_classes = np.argmax(y_pred, axis=1)
+        y_true = self.test_generator.classes
+        
+        # Compute confusion matrix
+        cm = confusion_matrix(y_true, y_pred_classes)
+        if normalize:
+            cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        
+        # Plot
+        plt.figure(figsize=(8, 6))
+        plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
+        plt.title('Confusion Matrix')
+        plt.colorbar()
+        
+        classes = [self.class_labels[i] for i in range(self.num_classes)]
+        tick_marks = np.arange(len(classes))
+        plt.xticks(tick_marks, classes, rotation=45)
+        plt.yticks(tick_marks, classes)
+        
+        # Add text annotations
+        thresh = cm.max() / 2.
+        for i, j in np.ndindex(cm.shape):
+            plt.text(j, i, f'{cm[i, j]:.2f}' if normalize else f'{cm[i, j]}',
+                    horizontalalignment="center",
+                    color="white" if cm[i, j] > thresh else "black")
+        
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
+        plt.tight_layout()
+        plt.show()
+        
+        # Print classification report
+        class_names = [self.class_labels[i] for i in range(self.num_classes)]
+        print("\nClassification Report:")
+        print(classification_report(y_true, y_pred_classes, target_names=class_names))
+
 
     def plot_data_distribution(self, train_labels, test_labels):
         # Calculate class counts for training and testing data
