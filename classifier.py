@@ -50,16 +50,19 @@ class Classifier:
         self.test_generator = None
         
         self._setup_environment()
-
-    def setup_environment(self):
-        """Configure GPU settings and logging level."""
-        # Allow dynamically allocate memory on the GPU
+    
+    def _setup_environment(self):
+        """Configure GPU settings and optimize TensorFlow."""
+        # Configure GPU memory growth
         physical_devices = tf.config.list_physical_devices('GPU')
         if physical_devices:
-            tf.config.experimental.set_memory_growth(physical_devices[0], True)
-
+            try:
+                tf.config.experimental.set_memory_growth(physical_devices[0], True)
+            except RuntimeError:
+                pass  # Memory growth must be set before GPUs have been initialized
+    
         # Silence TensorFlow logs
-        # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
             # 0 = all messages are logged (default behavior)
             # 1 = INFO messages are not printed
             # 2 = INFO and WARNING messages are not printed
