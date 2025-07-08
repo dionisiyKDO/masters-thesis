@@ -289,96 +289,124 @@ class Classifier:
         return predicted_class_label
 
 
-    def train(self, learning_rate=0.001, beta_1=0.9, beta_2=0.999, epochs=20, batch_size=16, logging=True, model_summary=True, earlystop=True):
-        self._get_model()
-        if self.model == None: 
-            print('=== Incorrect network name ===')
-            return
-
+    def train(self, 
+              train_dir: str,
+              test_dir: str,
+              epochs: int = 50,
+              batch_size: int = 32,
+              learning_rate: float = 0.001,
+              optimizer: str = 'adam',
+              early_stopping: bool = True,
+              save_best: bool = True,
+              checkpoint_dir: str = './checkpoints',
+              verbose: int = 1) -> Dict:
+        """
+        Train the model.
+        
+        Args:
+            train_dir: Path to training data
+            test_dir: Path to test data (optional)
+            epochs: Number of training epochs
+            batch_size: Batch size
+            learning_rate: Learning rate
+            optimizer: Optimizer type ('adam', 'adamax', 'sgd')
+            early_stopping: Whether to use early stopping
+            save_best: Whether to save best model
+            checkpoint_dir: Directory to save checkpoints
+            verbose: Verbosity level
+            
+        Returns:
+            Dictionary with training results
+        """
         start_time = time.time()
-
-        seed = 1
-        train_dir = './data/Training/'
-        test_dir  = './data/Testing/'
+    
+        # Setup data generators
+        steps_per_epoch, validation_steps = self.setup_data_generators(
+            train_dir, test_dir, batch_size
+        )
         
-        # Getting data
-        # region
-        test_datagen =  ImageDataGenerator(rescale=1./255)
-        train_datagen = ImageDataGenerator(rescale=1./255,
-                                           rotation_range=10,
-                                           brightness_range=(0.9, 1.10),
-                                           width_shift_range=0.005,
-                                           height_shift_range=0.005,
-                                           shear_range=10,
-                                           horizontal_flip=True,
-                                           )
+        # Build model
+        if not self.build_model():
+            return {'error': 'Failed to build model'}
         
-        self.test_generator  =  test_datagen.flow_from_directory(test_dir,
-                                                                target_size=self.img_size,
-                                                                batch_size=batch_size,
-                                                                class_mode="categorical",
-                                                                shuffle=False,
-                                                                seed=seed)
-        self.train_generator = train_datagen.flow_from_directory(train_dir,
-                                                                target_size=self.img_size,
-                                                                batch_size=batch_size,
-                                                                class_mode="categorical",
-                                                                seed=seed
-                                                                )
+        # Compile model
+        #region
+        optimizers = {
+            'adam': Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999),
+            'adamax': Adamax(learning_rate=learning_rate),
+            'sgd': SGD(learning_rate=learning_rate)
+        }
         
-        steps_per_epoch =  self.train_generator.samples // batch_size
-        validation_steps = self.test_generator.samples  // batch_size
-        # endregion
-
-        # Initialize model
-        # region
-        if model_summary: self.model.summary()
+        self.model.compile(
+            optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999)),
+            loss='categorical_crossentropy',
+            metrics=['accuracy']
+        )
         
-        self.model.compile(Adam(learning_rate=learning_rate, beta_1=beta_1, beta_2=beta_2), loss= 'categorical_crossentropy', metrics=['acc'])
-        # model.compile(Adamax(learning_rate=learning_rate), loss= 'categorical_crossentropy', metrics=['acc'])
-        # model.compile(SGD(learning_rate=learning_rate), loss='categorical_crossentropy', metrics= ['acc'])
+        if verbose > 0:
+            self.model.summary()
+        #endregion
         
-        # endregion
-       
-        # Network training
-        # region
-        if earlystop: model_es = EarlyStopping(monitor='val_acc', min_delta=1e-9, patience=8, verbose=True)
-        model_rlr = ReduceLROnPlateau(monitor='val_loss', factor=0.3, patience=5, verbose=True)
-        model_cp = ModelCheckpoint(
-            filepath='./checkpoints/model.epoch{epoch:02d}-val_acc{val_acc:.4f}.hdf5', 
-            monitor='val_acc', 
-            save_freq='epoch', 
-            verbose=1, 
-            save_best_only=True, 
-            save_weights_only=True, )
+        # Setup callbacks
+        #region
+        callbacks = []
         
-        callbacks = [model_rlr, model_cp, model_es] if earlystop else [model_rlr, model_cp]
-
-        def on_epoch_end(epoch, val_acc):
-            globals.progress = int((epoch + 1) / epochs * 100)
-
-        callbacks.append(tf.keras.callbacks.LambdaCallback(on_epoch_end=on_epoch_end))
-
-        self.history = self.model.fit(self.train_generator,
-                                      steps_per_epoch=steps_per_epoch,
-                                      epochs=epochs,
-                                      validation_data=self.test_generator,
-                                      validation_steps=validation_steps,
-                                      verbose=logging, 
-                                      callbacks=callbacks)
-        # endregion
+        if early_stopping:
+            callbacks.append(EarlyStopping(
+                monitor='val_accuracy',
+                patience=6,
+                restore_best_weights=True,
+                verbose=verbose
+            ))
         
-        # Network evaluation + results of trining
-        # region
-        loss, accuracy = self.model.evaluate(self.test_generator, steps=validation_steps)
-        self.training_time = time.time() - start_time
-
-        print(f'Test loss: {loss:.4f}')
-        print(f'Test accuracy: {accuracy:.4f}')
-        print(f'Training time: {self.training_time:.4f}')
-        return {'loss': loss, 'accuracy': accuracy, 'training_time': self.training_time}
-        # endregion
-
+        callbacks.append(ReduceLROnPlateau(
+            monitor='val_loss',
+            factor=0.3,
+            patience=4,
+            min_lr=1e-7,
+            verbose=verbose
+        ))
+        
+        if save_best:
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            callbacks.append(ModelCheckpoint(
+                filepath=os.path.join(checkpoint_dir, f'{self.model_name}_best.h5'),
+                monitor='val_accuracy',
+                save_best_only=True,
+                save_weights_only=False,
+                verbose=verbose
+            ))
+        #endregion
+        
+        # Train model
+        self.history = self.model.fit(
+            self.train_generator,
+            steps_per_epoch=steps_per_epoch,
+            epochs=epochs,
+            validation_data=self.test_generator,
+            validation_steps=validation_steps,
+            callbacks=callbacks,
+            verbose=verbose
+        )
+        
+        # Evaluate model
+        loss, accuracy = self.model.evaluate(self.test_generator, verbose=0)
+        training_time = time.time() - start_time
+        
+        results = {
+            'loss': loss,
+            'accuracy': accuracy,
+            'training_time': training_time,
+            'epochs_trained': len(self.history.history['loss'])
+        }
+        
+        print("\nTraining completed!")
+        print(f"Final accuracy: {accuracy:.4f}")
+        print(f"Final loss: {loss:.4f}")
+        print(f"Training time: {training_time:.2f} seconds")
+        
+        return results
+    
 
     def plot_training_history(self):
         if self.history == None: 
