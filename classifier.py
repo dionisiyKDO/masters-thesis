@@ -50,7 +50,7 @@ class Classifier:
         self.test_generator = None
         
         self._setup_environment()
-    
+
     def _setup_environment(self):
         """Configure GPU settings and optimize TensorFlow."""
         # Configure GPU memory growth
@@ -67,6 +67,22 @@ class Classifier:
             # 1 = INFO messages are not printed
             # 2 = INFO and WARNING messages are not printed
             # 3 = INFO, WARNING, and ERROR messages are not printed
+
+    def _detect_classes(self) -> Dict[str, int]:
+        """Auto-detect class labels from directory structure."""
+        if not self.data_dir:
+            print("No data directory")
+            exit()
+        
+        train_dir = Path(self.data_dir) / 'train'
+        if not train_dir.exists():
+            train_dir = Path(self.data_dir)
+        
+        if train_dir.exists():
+            classes = sorted([d.name for d in train_dir.iterdir() if d.is_dir()])
+            return {cls: idx for idx, cls in enumerate(classes)}
+        
+        return {}
 
     def set_network_name(self, network_name):
         self.network_name = network_name
