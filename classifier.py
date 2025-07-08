@@ -84,8 +84,70 @@ class Classifier:
         
         return {}
 
-    def set_network_name(self, network_name):
-        self.network_name = network_name
+    def setup_data_generators(self, 
+                            train_dir: str,
+                            test_dir: str,
+                            batch_size: int = 32,
+                            seed: int = 42) -> Tuple[int, int]:
+        """
+        Setup data generators for training and validation.
+        
+        Args:
+            train_dir: Path to training data directory
+            test_dir: Path to test data directory (optional)
+            batch_size: Batch size for training
+            validation_split: Fraction of data to use for validation if no test_dir
+            augmentation_config: Custom augmentation parameters
+            seed: Random seed for reproducibility
+            
+        Returns:
+            Tuple of (steps_per_epoch, validation_steps)
+        """
+        # Default augmentation config
+        default_augmentation = {
+            'rotation_range': 10,
+            'brightness_range': (0.9, 1.1),
+            'width_shift_range': 0.005,
+            'height_shift_range': 0.005,
+            'shear_range': 10,
+            'horizontal_flip': True,
+        }
+        
+        # Create data generators
+        test_datagen = ImageDataGenerator(rescale=1./255)
+        train_datagen = ImageDataGenerator(
+            rescale=1./255,
+            **default_augmentation
+        )
+        
+        # Setup generators
+        self.test_generator = test_datagen.flow_from_directory(
+            test_dir,
+            target_size=self.img_size,
+            batch_size=batch_size,
+            class_mode='categorical',
+            shuffle=False,
+            seed=seed
+        )
+        self.train_generator = train_datagen.flow_from_directory(
+            train_dir,
+            target_size=self.img_size,
+            batch_size=batch_size,
+            class_mode='categorical',
+            seed=seed,
+        )
+        
+        # Update class labels from generator
+        self.class_labels = {v: k for k, v in self.train_generator.class_indices.items()}
+        self.num_classes = len(self.class_labels)
+        
+        # steps_per_epoch = self.train_generator.samples // batch_size
+        # validation_steps = self.test_generator.samples // batch_size
+        
+        steps_per_epoch = ceil(self.train_generator.samples / batch_size)
+        validation_steps = ceil(self.test_generator.samples / batch_size)
+        
+        return steps_per_epoch, validation_steps
 
     def load_model_from_checkpoint(self, checkpoint_path: str):
         """
