@@ -1,6 +1,8 @@
 checkpoints/
 flattened/
+flattened-limited/
 data/
+.vscode/
 
 archive.zip
 

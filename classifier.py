@@ -17,9 +17,15 @@ from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLRO
 from tensorflow.keras.optimizers import Adam, Adamax, SGD
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import (
-    Conv2D, MaxPooling2D, Flatten, Dense, Dropout,
+    Conv2D, MaxPooling2D, Flatten, Dense, Dropout, InputLayer,
     BatchNormalization, GlobalAveragePooling2D
 )
+
+from PIL import ImageFile
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 
 class Classifier:
@@ -62,7 +68,7 @@ class Classifier:
                 pass  # Memory growth must be set before GPUs have been initialized
     
         # Silence TensorFlow logs
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
             # 0 = all messages are logged (default behavior)
             # 1 = INFO messages are not printed
             # 2 = INFO and WARNING messages are not printed
@@ -84,25 +90,24 @@ class Classifier:
         
         return {}
 
-
-    def setup_data_generators(self, 
+    def setup_data_generators(self,
                             train_dir: str,
+                            val_dir: str,
                             test_dir: str,
                             batch_size: int = 32,
-                            seed: int = 42) -> Tuple[int, int]:
+                            seed: int = 42) -> Tuple[int, int, int]:
         """
-        Setup data generators for training and validation.
+        Setup data generators for training, validation, and testing.
         
         Args:
             train_dir: Path to training data directory
-            test_dir: Path to test data directory (optional)
+            val_dir: Path to validation data directory
+            test_dir: Path to test data directory
             batch_size: Batch size for training
-            validation_split: Fraction of data to use for validation if no test_dir
-            augmentation_config: Custom augmentation parameters
             seed: Random seed for reproducibility
             
         Returns:
-            Tuple of (steps_per_epoch, validation_steps)
+            Tuple of (steps_per_epoch, validation_steps, test_steps)
         """
         # Default augmentation config
         default_augmentation = {
@@ -115,40 +120,54 @@ class Classifier:
         }
         
         # Create data generators
-        test_datagen = ImageDataGenerator(rescale=1./255)
+        # Training generator with augmentation
         train_datagen = ImageDataGenerator(
             rescale=1./255,
             **default_augmentation
         )
         
+        # Validation and test generators without augmentation (only rescaling)
+        val_datagen = ImageDataGenerator(rescale=1./255)
+        test_datagen = ImageDataGenerator(rescale=1./255)
+        
         # Setup generators
-        self.test_generator = test_datagen.flow_from_directory(
-            test_dir,
-            target_size=self.img_size,
-            batch_size=batch_size,
-            class_mode='categorical',
-            shuffle=False,
-            seed=seed
-        )
         self.train_generator = train_datagen.flow_from_directory(
             train_dir,
             target_size=self.img_size,
             batch_size=batch_size,
-            class_mode='categorical',
+            class_mode='binary',  # or 'binary' for binary classification
             seed=seed,
+            shuffle=True
+        )
+        
+        self.val_generator = val_datagen.flow_from_directory(
+            val_dir,
+            target_size=self.img_size,
+            batch_size=batch_size,
+            class_mode='binary',  # or 'binary' for binary classification
+            shuffle=False,
+            seed=seed
+        )
+        
+        self.test_generator = test_datagen.flow_from_directory(
+            test_dir,
+            target_size=self.img_size,
+            batch_size=batch_size,
+            class_mode='binary',  # or 'binary' for binary classification
+            shuffle=False,
+            seed=seed
         )
         
         # Update class labels from generator
         self.class_labels = {v: k for k, v in self.train_generator.class_indices.items()}
         self.num_classes = len(self.class_labels)
         
-        # steps_per_epoch = self.train_generator.samples // batch_size
-        # validation_steps = self.test_generator.samples // batch_size
-        
+        # Calculate steps for each dataset
         steps_per_epoch = ceil(self.train_generator.samples / batch_size)
-        validation_steps = ceil(self.test_generator.samples / batch_size)
+        validation_steps = ceil(self.val_generator.samples / batch_size)
+        test_steps = ceil(self.test_generator.samples / batch_size)
         
-        return steps_per_epoch, validation_steps
+        return steps_per_epoch, validation_steps, test_steps
 
     def build_model(self) -> bool:
         """Build the specified model architecture."""
@@ -161,25 +180,39 @@ class Classifier:
                     MaxPooling2D(pool_size=2),
                     Flatten(),
                     Dense(64, activation='relu'),
-
-                    Dense(self.num_classes, activation='softmax')
+                    # Dense(self.num_classes, activation='softmax')
+                    Dense(1, activation='sigmoid')
                 ])
             
             elif self.model_name == 'OwnV1':
                 self.model = Sequential([
-                    Conv2D(256, (12,12), strides=(5,5), activation='relu', input_shape=self.img_shape),
-                    MaxPooling2D((3,3), strides=(2,2)),
+                    InputLayer(input_shape=self.img_shape),  
+                    
+                    Conv2D(32, (3, 3), activation='relu'),
+                    BatchNormalization(),  
+                    MaxPooling2D((2, 2)),
+                    
+                    Conv2D(64, (3, 3), activation='relu'),
                     BatchNormalization(),
-                    Conv2D(512, (6,6), strides=(2,2), activation='relu', padding='same'),
-                    MaxPooling2D((3,3), strides=(2,2)),
+                    MaxPooling2D((2, 2)),
+                    
+                    Conv2D(128, (3, 3), activation='relu'),
                     BatchNormalization(),
-                    Conv2D(256, (3,3), activation='relu', padding='same'),
-                    MaxPooling2D((3,3), strides=(2,2)),
+                    MaxPooling2D((2, 2)),
+
+                    Conv2D(256, (3, 3), activation='relu'),
                     BatchNormalization(),
-                    Flatten(),
-                    Dense(4096, activation='relu'),
-                    Dropout(0.5),
-                    Dense(self.num_classes, activation='softmax')
+                    MaxPooling2D((2, 2)),
+                    
+                    GlobalAveragePooling2D(),
+                    
+                    # Dense Layer with Dropout
+                    Dense(256, activation='relu'),
+                    Dropout(0.5),  
+                    
+                    # Output Layer
+                    # Dense(self.num_classes, activation='softmax')
+                    Dense(1, activation='sigmoid')
                 ])
             
             elif self.model_name == 'OwnV2':
@@ -196,7 +229,8 @@ class Classifier:
                     Flatten(),
                     Dense(1024, activation='relu'),
                     Dropout(0.5),
-                    Dense(self.num_classes, activation='softmax')
+                    # Dense(self.num_classes, activation='softmax')
+                    Dense(1, activation='sigmoid')
                 ])
             
             elif self.model_name == 'AlexNet':
@@ -217,7 +251,8 @@ class Classifier:
                     Dropout(0.5),
                     Dense(4096, activation='relu'),
                     Dropout(0.5),
-                    Dense(self.num_classes, activation='softmax')
+                    # Dense(self.num_classes, activation='softmax')
+                    Dense(1, activation='sigmoid')
                 ])
             
             # Transfer learning models
@@ -244,7 +279,8 @@ class Classifier:
                         GlobalAveragePooling2D(),
                         Dense(128, activation='relu'),
                         Dropout(0.5),
-                        Dense(self.num_classes, activation='softmax')
+                        # Dense(self.num_classes, activation='softmax')
+                        Dense(1, activation='sigmoid')
                     ])
                 else:
                     print(f"Unknown model: {self.model_name}")
@@ -259,6 +295,7 @@ class Classifier:
 
     def train(self, 
               train_dir: str,
+              val_dir: str,
               test_dir: str,
               epochs: int = 50,
               batch_size: int = 32,
@@ -289,9 +326,16 @@ class Classifier:
         start_time = time.time()
     
         # Setup data generators
-        steps_per_epoch, validation_steps = self.setup_data_generators(
-            train_dir, test_dir, batch_size
+        # steps_per_epoch, validation_steps = self.setup_data_generators(
+        #     train_dir, test_dir, batch_size
+        # )
+        steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(
+            train_dir=train_dir,
+            val_dir=val_dir,
+            test_dir=test_dir,
+            batch_size=batch_size
         )
+        
         
         # Build model
         if not self.build_model():
@@ -307,7 +351,7 @@ class Classifier:
         
         self.model.compile(
             optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999)),
-            loss='categorical_crossentropy',
+            loss='binary_crossentropy',
             metrics=['accuracy']
         )
         
@@ -322,7 +366,7 @@ class Classifier:
         if early_stopping:
             callbacks.append(EarlyStopping(
                 monitor='val_accuracy',
-                patience=6,
+                patience=10,
                 restore_best_weights=True,
                 verbose=verbose
             ))
@@ -416,7 +460,7 @@ class Classifier:
             return
         self.model.save(model_path)
         print(f"Model saved to {model_path}")
-    
+
 
     def plot_training_history(self):
         """Plot training history."""
@@ -495,7 +539,6 @@ class Classifier:
         print("\nClassification Report:")
         print(classification_report(y_true, y_pred_classes, target_names=class_names))
 
-
     def plot_data_distribution(self, train_labels, test_labels):
         # Calculate class counts for training and testing data
         train_class_counts = [len([x for x in train_labels if x == label]) for label in self.class_labels.keys()]
@@ -539,25 +582,40 @@ class Classifier:
 
 if __name__ == "__main__":
     # Initialize classifier
+    train_dir = './data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/train'
+    val_dir = './data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/val'
+    test_dir = './data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/test'
+    
     classifier = Classifier(
-        model_name='AlexNet',
+        model_name='OwnV1',
         img_size=(150, 150),
-        data_dir='./flattened-limited'
+        data_dir=test_dir
     )
+    
     
     # Train the modelc
     results = classifier.train(
-        train_dir='./flattened-limited/train',
-        test_dir='./flattened-limited/valid',
-        epochs=50,
+        train_dir=train_dir,
+        val_dir=val_dir,
+        test_dir=test_dir,
+        epochs=1,
         batch_size=32,
         learning_rate=0.001
     )
     
+    # classifier.load_model("checkpoints/Bone_fracture_OwnV1_epoch_17_val_1-00000.h5")
+    
+        
     # Plot results
-    classifier.plot_training_history()
-    classifier.plot_confusion_matrix()
+    # classifier.plot_training_history()
+    # classifier.plot_confusion_matrix()
     
     # Make predictions
-    prediction, confidence, probabilities = classifier.predict('./test_image.jpg')
-    print(f"Predicted: {prediction} (confidence: {confidence:.2f})")
+    # filename = './fract.png'
+    # prediction, confidence, probabilities = classifier.predict(filename)
+    # print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
+    # classifier.generate_fracture_heatmap(filename, method='gradcam')
+    
+    # filename = './fractno.png'
+    # prediction, confidence, probabilities = classifier.predict(filename)
+    # print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
