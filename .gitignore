@@ -4,6 +4,10 @@ flattened-limited/
 data/
 .vscode/
 
+fig.png
+fract.png
+fractno.png
+
 archive.zip
 
 test.py
