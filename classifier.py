@@ -7,6 +7,9 @@ from math import ceil
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
+import cv2
+from PIL import Image
+import seaborn as sns
 import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
@@ -14,18 +17,25 @@ import plotly.graph_objects as go
 from sklearn.metrics import confusion_matrix, classification_report
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from tensorflow.keras.optimizers import Adam, Adamax, SGD
+from tensorflow.keras.optimizers import Adam, Adamax, SGD, AdamW
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.layers import (
     Conv2D, MaxPooling2D, Flatten, Dense, Dropout, InputLayer,
     BatchNormalization, GlobalAveragePooling2D
 )
 
+
+import tensorflow.keras.backend as K
+from tensorflow.keras.models import Model
+
 from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
+
+from scipy.ndimage import zoom
+from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
 
 
 class Classifier:
@@ -86,7 +96,7 @@ class Classifier:
         
         if train_dir.exists():
             classes = sorted([d.name for d in train_dir.iterdir() if d.is_dir()])
-            return {cls: idx for idx, cls in enumerate(classes)}
+            return {idx: cls for idx, cls in enumerate(classes)}
         
         return {}
 
@@ -174,7 +184,8 @@ class Classifier:
         try:
             if self.model_name == 'SimpleNet':
                 self.model = Sequential([
-                    Conv2D(filters=16, kernel_size=3, activation='relu', padding='same', input_shape=self.img_shape),
+                    InputLayer(input_shape=self.img_shape),  
+                    Conv2D(filters=16, kernel_size=3, activation='relu', padding='same'),
                     MaxPooling2D(pool_size=2),
                     Conv2D(filters=32, kernel_size=3, activation='relu'),
                     MaxPooling2D(pool_size=2),
@@ -186,33 +197,38 @@ class Classifier:
             
             elif self.model_name == 'OwnV1':
                 self.model = Sequential([
-                    InputLayer(input_shape=self.img_shape),  
+                    InputLayer(input_shape=self.img_shape, name='input_layer'),
                     
-                    Conv2D(32, (3, 3), activation='relu'),
-                    BatchNormalization(),  
-                    MaxPooling2D((2, 2)),
+                    # First Conv Block
+                    Conv2D(32, (3, 3), activation='relu', name='conv1'),
+                    BatchNormalization(name='bn1'),
+                    MaxPooling2D((2, 2), name='pool1'),
                     
-                    Conv2D(64, (3, 3), activation='relu'),
-                    BatchNormalization(),
-                    MaxPooling2D((2, 2)),
+                    # Second Conv Block
+                    Conv2D(64, (3, 3), activation='relu', name='conv2'),
+                    BatchNormalization(name='bn2'),
+                    MaxPooling2D((2, 2), name='pool2'),
                     
-                    Conv2D(128, (3, 3), activation='relu'),
-                    BatchNormalization(),
-                    MaxPooling2D((2, 2)),
+                    # Third Conv Block
+                    Conv2D(128, (3, 3), activation='relu', name='conv3'),
+                    BatchNormalization(name='bn3'),
+                    MaxPooling2D((2, 2), name='pool3'),
 
-                    Conv2D(256, (3, 3), activation='relu'),
-                    BatchNormalization(),
-                    MaxPooling2D((2, 2)),
+                    # Fourth Conv Block (last conv layer)
+                    Conv2D(256, (3, 3), activation='relu', name='conv4_last'),
+                    BatchNormalization(name='bn4'),
+                    MaxPooling2D((2, 2), name='pool4'),
                     
-                    GlobalAveragePooling2D(),
+                    # Global Average Pooling
+                    GlobalAveragePooling2D(name='global_avg_pool'),
                     
-                    # Dense Layer with Dropout
-                    Dense(256, activation='relu'),
-                    Dropout(0.5),  
+                    # Dense layers
+                    Dense(256, activation='relu', name='dense1'),
+                    Dropout(0.5, name='dropout1'),
                     
                     # Output Layer
-                    # Dense(self.num_classes, activation='softmax')
-                    Dense(1, activation='sigmoid')
+                    # Dense(self.num_classes, activation='softmax', name='output')
+                    Dense(1, activation='sigmoid', name='output')
                 ])
             
             elif self.model_name == 'OwnV2':
@@ -291,6 +307,89 @@ class Classifier:
         except Exception as e:
             print(f"Error building model: {e}")
             return False
+        
+        
+    def generate_gradcam_heatmap(self, image_path: str, conv_layer_name: Optional[str] = None, alpha: float = 0.5):
+        """
+        Generates a Grad-CAM heatmap for a given image.
+
+        Args:
+            image_path (str): Path to the input image file.
+            conv_layer_name (Optional[str]): The name of the last convolutional layer. 
+                                             If None, it's detected automatically.
+            alpha (float): The transparency factor for overlaying the heatmap.
+
+        Returns:
+            A superimposed image with the heatmap overlay.
+        """
+        if self.model is None:
+            raise ValueError("Model has not been trained or loaded yet.")
+
+        # 1. Preprocess the image
+        img = tf.keras.preprocessing.image.load_img(image_path, target_size=self.img_size)
+        img_array = tf.keras.preprocessing.image.img_to_array(img)
+        img_array = np.expand_dims(img_array, axis=0)
+        img_array = img_array / 255.0  # Rescale
+
+        # 2. Find the last convolutional layer if not provided
+        if conv_layer_name is None:
+            for layer in reversed(self.model.layers):
+                if isinstance(layer, Conv2D):
+                    conv_layer_name = layer.name
+                    break
+            if conv_layer_name is None:
+                raise ValueError("Could not find a Conv2D layer in the model.")
+        
+        # 3. Create the Grad-CAM model
+        # This is the key part that fixes the issue for Sequential models.
+        # We create the model here, after self.model is already built.
+        grad_model = Model(
+            inputs=[self.model.inputs],
+            outputs=[self.model.get_layer(conv_layer_name).output, self.model.layers[-1].output]
+        )
+
+        # 4. REVISED: Compute gradients with explicit tape context
+        with tf.GradientTape() as tape:
+            conv_outputs, predictions = grad_model(img_array)
+            # For binary classification with sigmoid, the prediction is the score
+            loss = predictions[0][0]
+
+        # Compute gradients of the loss with respect to the conv layer's output
+        grads = tape.gradient(loss, conv_outputs)
+
+        # Add a check to catch the error gracefully
+        if grads is None:
+            raise ValueError(
+                "Gradient is None. Check that all layers between your last conv "
+                f"layer ('{conv_layer_name}') and the output are differentiable. "
+                "This can also happen with some Keras/TensorFlow versions."
+            )
+
+        # 5. REVISED: Pool gradients and create heatmap
+        # We use grads[0] because grads has a batch dimension we need to remove.
+        pooled_grads = tf.reduce_mean(grads[0], axis=(0, 1))
+        
+        # Weight the feature maps by the gradients
+        heatmap = conv_outputs[0] @ pooled_grads[..., tf.newaxis]
+        heatmap = tf.squeeze(heatmap) # Remove the last dimension
+
+        # For visualization, we still normalize the heatmap
+        heatmap = np.maximum(heatmap, 0)
+        max_heat = np.max(heatmap)
+        if max_heat == 0:
+            max_heat = 1e-10
+        heatmap /= max_heat
+        heatmap = cv2.resize(heatmap, self.img_size)
+        heatmap = np.uint8(255 * heatmap)
+        heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
+
+        # 6. Superimpose heatmap on the original image (same as before)
+        original_img = cv2.imread(image_path)
+        original_img = cv2.resize(original_img, self.img_size)
+        
+        superimposed_img = cv2.addWeighted(original_img, 1.0 - alpha, heatmap, alpha, 0)
+        
+        return superimposed_img
     
 
     def train(self, 
@@ -344,15 +443,33 @@ class Classifier:
         # Compile model
         #region
         optimizers = {
-            'adam': Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999),
-            'adamax': Adamax(learning_rate=learning_rate),
-            'sgd': SGD(learning_rate=learning_rate)
+            'adam': Adam(
+                learning_rate=learning_rate, 
+                beta_1=0.9, 
+                beta_2=0.999,
+                epsilon=1e-7  # Better numerical stability
+            ),
+            'adamw': AdamW(  # Often better for vision tasks
+                learning_rate=learning_rate,
+                weight_decay=0.01
+            ),
+            'sgd': SGD(
+                learning_rate=learning_rate,
+                momentum=0.9,
+                nesterov=True  # Often helps with convergence
+            )
         }
         
         self.model.compile(
             optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999)),
             loss='binary_crossentropy',
-            metrics=['accuracy']
+            metrics=[
+                'accuracy',
+                tf.keras.metrics.Precision(name='precision'),
+                tf.keras.metrics.Recall(name='recall'),
+                tf.keras.metrics.AUC(name='auc'),
+                tf.keras.metrics.F1Score(name='f1_score')  # Available in TF 2.15+
+            ]
         )
         
         if verbose > 0:
@@ -365,28 +482,31 @@ class Classifier:
         
         if early_stopping:
             callbacks.append(EarlyStopping(
-                monitor='val_accuracy',
-                patience=10,
+                monitor='val_auc',  # Better than val_loss for medical imaging
+                patience=10,        # Increase patience for medical data
                 restore_best_weights=True,
-                verbose=verbose
+                verbose=verbose,
+                mode='max'  # AUC should be maximized
             ))
         
         callbacks.append(ReduceLROnPlateau(
-            monitor='val_loss',
-            factor=0.3,
-            patience=4,
-            min_lr=1e-7,
-            verbose=verbose
+            monitor='val_auc',
+            factor=0.5,        # Less aggressive reduction
+            patience=5,        # Reduce patience
+            min_lr=1e-8,       # Lower minimum
+            verbose=verbose,
+            mode='max'
         ))
         
         if save_best:
             os.makedirs(checkpoint_dir, exist_ok=True)
             callbacks.append(ModelCheckpoint(
-                filepath=os.path.join(checkpoint_dir, f'{self.model_name}_best.h5'),
-                monitor='val_accuracy',
+                filepath=os.path.join(checkpoint_dir, 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'),
+                monitor='val_auc',              # Better metric for medical imaging
                 save_best_only=True,
                 save_weights_only=False,
-                verbose=verbose
+                verbose=verbose,
+                mode='max'
             ))
         #endregion
         
@@ -395,26 +515,33 @@ class Classifier:
             self.train_generator,
             steps_per_epoch=steps_per_epoch,
             epochs=epochs,
-            validation_data=self.test_generator,
+            validation_data=self.val_generator,
             validation_steps=validation_steps,
             callbacks=callbacks,
             verbose=verbose
         )
         
         # Evaluate model
-        loss, accuracy = self.model.evaluate(self.test_generator, verbose=0)
+        evaluation_results = self.model.evaluate(self.test_generator, verbose=0)
+        metric_names = self.model.metrics_names  # ['loss', 'accuracy', 'precision', 'recall', 'auc', 'f1_score']
+        results_dict = dict(zip(metric_names, evaluation_results))
         training_time = time.time() - start_time
         
         results = {
-            'loss': loss,
-            'accuracy': accuracy,
+            'loss': results_dict['loss'],
+            'accuracy': results_dict['accuracy'],
             'training_time': training_time,
-            'epochs_trained': len(self.history.history['loss'])
+            'epochs_trained': len(self.history.history['loss']),
+            # optionally add the rest:
+            'precision': results_dict['precision'],
+            'recall': results_dict['recall'],
+            'auc': results_dict['auc'],
+            'f1_score': results_dict['f1_score'],
         }
         
         print("\nTraining completed!")
-        print(f"Final accuracy: {accuracy:.4f}")
-        print(f"Final loss: {loss:.4f}")
+        print(f"Final accuracy: {results_dict['accuracy']:.4f}")
+        print(f"Final loss: {results_dict['loss']:.4f}")
         print(f"Training time: {training_time:.2f} seconds")
         
         return results
@@ -431,21 +558,47 @@ class Classifier:
         """
         if self.model is None:
             raise ValueError("Model not trained or loaded")
-        
+
         # Load and preprocess image
         img = tf.keras.preprocessing.image.load_img(image_path, target_size=self.img_size)
         img_array = tf.keras.preprocessing.image.img_to_array(img)
         img_array = np.expand_dims(img_array, axis=0) / 255.0
-        
+
         # Make prediction
-        predictions = self.model.predict(img_array, verbose=0)[0]
-        predicted_idx = np.argmax(predictions)
-        predicted_class = self.class_labels[predicted_idx]
-        confidence = predictions[predicted_idx]
-        
-        # Create probability dictionary
-        probabilities = {self.class_labels[i]: prob for i, prob in enumerate(predictions)}
-        
+        raw_pred = self.model.predict(img_array, verbose=0)
+
+        if self.num_classes == 2:
+            # Binary classification: sigmoid → float output
+            prob_class_1 = float(raw_pred[0])
+            prob_class_0 = 1.0 - prob_class_1
+
+            # Map labels to values
+            class_names = list(self.class_labels.keys())
+            
+            predicted_idx = 1 if prob_class_1 >= 0.5 else 0
+            
+            # print(predicted_idx)
+            # print(self.class_labels)
+            # print(self.class_labels[predicted_idx])
+            
+            predicted_class = self.class_labels[predicted_idx]
+            confidence = max(prob_class_0, prob_class_1)
+
+            probabilities = {
+                self.class_labels[0]: prob_class_0,
+                self.class_labels[1]: prob_class_1
+            }
+
+        else:
+            # Multiclass
+            predictions = raw_pred[0]
+            predicted_idx = np.argmax(predictions)
+            idx_to_class = {v: k for k, v in self.class_labels.items()}
+
+            predicted_class = idx_to_class[predicted_idx]
+            confidence = predictions[predicted_idx]
+            probabilities = {idx_to_class[i]: float(prob) for i, prob in enumerate(predictions)}
+
         return predicted_class, confidence, probabilities
     
     def load_model(self, model_path: str):
@@ -591,31 +744,52 @@ if __name__ == "__main__":
         img_size=(150, 150),
         data_dir=test_dir
     )
+     
+    # Train the model
+    # results = classifier.train(
+    #     train_dir=train_dir,
+    #     val_dir=val_dir,
+    #     test_dir=test_dir,
+    #     epochs=30,
+    #     batch_size=32,
+    #     learning_rate=0.001
+    # )
+    
+    # Load the model
+    # classifier.load_model('./checkpoints/Bone_fracture_OwnV1_epoch_17_val_1-00000.h5')
+    classifier.load_model('checkpoints/model.epoch19-val_acc0.9940.hdf5')
     
     
-    # Train the modelc
-    results = classifier.train(
-        train_dir=train_dir,
-        val_dir=val_dir,
-        test_dir=test_dir,
-        epochs=1,
-        batch_size=32,
-        learning_rate=0.001
-    )
+    # Provide the path to an image you want to inspect
+    image_to_test = 'data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/val/fractured/54d38979da5d67c85b1df0919c12d4_jumbo.jpeg'
     
-    # classifier.load_model("checkpoints/Bone_fracture_OwnV1_epoch_17_val_1-00000.h5")
+    # Get the class prediction
+    predicted_class, confidence, _ = classifier.predict(image_to_test)
+    print(f"Prediction for '{image_to_test}': {predicted_class} with {confidence:.2%} confidence.")
+
+    # Generate the heatmap
+    # You can specify the last conv layer name from your OwnV1 model ('conv4_last')
+    # or let the function find it automatically by passing None.
+    heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
     
-        
-    # Plot results
-    # classifier.plot_training_history()
-    # classifier.plot_confusion_matrix()
+    # Display the result using matplotlib
+    plt.figure(figsize=(8, 8))
+    # OpenCV loads images in BGR, matplotlib expects RGB. We need to convert.
+    plt.imshow(cv2.cvtColor(heatmap_img, cv2.COLOR_BGR2RGB))
+    plt.title(f"Grad-CAM Heatmap (Predicted: {predicted_class})")
+    plt.axis('off')
+    plt.savefig('fig.png')
     
     # Make predictions
-    # filename = './fract.png'
+    # filename = './fractno.png'
     # prediction, confidence, probabilities = classifier.predict(filename)
     # print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
-    # classifier.generate_fracture_heatmap(filename, method='gradcam')
     
     # filename = './fractno.png'
     # prediction, confidence, probabilities = classifier.predict(filename)
     # print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
+
+    # Plot results
+    # classifier.plot_training_history()
+    # classifier.plot_confusion_matrix()
+    
