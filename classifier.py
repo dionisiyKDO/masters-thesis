@@ -46,7 +46,7 @@ class Classifier:
     ]
     
     def __init__(self, 
-                 model_name: str = 'OwnV2',
+                 model_name: str = 'OwnV1',
                  img_size: Tuple[int, int] = (150, 150),
                  data_dir: Optional[str] = None,
                  class_labels: Optional[Dict[str, int]] = None):
@@ -352,7 +352,11 @@ class Classifier:
         with tf.GradientTape() as tape:
             conv_outputs, predictions = grad_model(img_array)
             # For binary classification with sigmoid, the prediction is the score
-            loss = predictions[0][0]
+            predicted_class = tf.cast(predictions[0][0] > 0.5, tf.float32)
+            loss = predicted_class * predictions[0][0] + (1 - predicted_class) * (1 - predictions[0][0])
+            
+            # loss = predictions[0][0] if predictions[0][0] > 0.5 else (1 - predictions[0][0])
+
 
         # Compute gradients of the loss with respect to the conv layer's output
         grads = tape.gradient(loss, conv_outputs)
@@ -368,6 +372,7 @@ class Classifier:
         # 5. REVISED: Pool gradients and create heatmap
         # We use grads[0] because grads has a batch dimension we need to remove.
         pooled_grads = tf.reduce_mean(grads[0], axis=(0, 1))
+        pooled_grads = pooled_grads / (tf.norm(pooled_grads) + 1e-8)
         
         # Weight the feature maps by the gradients
         heatmap = conv_outputs[0] @ pooled_grads[..., tf.newaxis]
@@ -389,7 +394,34 @@ class Classifier:
         
         superimposed_img = cv2.addWeighted(original_img, 1.0 - alpha, heatmap, alpha, 0)
         
-        return superimposed_img
+        return superimposed_img, heatmap, original_img
+    
+    def test_multiple_layers(self, image_path: str, alpha: float = 0.5):
+        """
+        Test Grad-CAM with multiple conv layers to find the best one.
+        """
+        layers_to_test = ['conv1', 'conv2', 'conv3', 'conv4_last']
+        
+        fig, axes = plt.subplots(2, 2, figsize=(12, 12))
+        axes = axes.flatten()
+        
+        for i, layer_name in enumerate(layers_to_test):
+            try:
+                superimposed_img, heatmap, original = self.generate_gradcam_heatmap(
+                    image_path, conv_layer_name=layer_name, alpha=alpha
+                )
+                
+                axes[i].imshow(cv2.cvtColor(superimposed_img, cv2.COLOR_BGR2RGB))
+                axes[i].set_title(f'Layer: {layer_name}')
+                axes[i].axis('off')
+                
+            except Exception as e:
+                axes[i].text(0.5, 0.5, f'Error with {layer_name}:\n{str(e)}', 
+                            ha='center', va='center', transform=axes[i].transAxes)
+                axes[i].set_title(f'Layer: {layer_name} (Error)')
+        
+        plt.tight_layout()
+        plt.savefig('figs.png')
     
 
     def train(self, 
@@ -770,15 +802,16 @@ if __name__ == "__main__":
     # Generate the heatmap
     # You can specify the last conv layer name from your OwnV1 model ('conv4_last')
     # or let the function find it automatically by passing None.
-    heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
+    # heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
+    heatmap_img = classifier.test_multiple_layers(image_to_test)
+    
     
     # Display the result using matplotlib
-    plt.figure(figsize=(8, 8))
-    # OpenCV loads images in BGR, matplotlib expects RGB. We need to convert.
-    plt.imshow(cv2.cvtColor(heatmap_img, cv2.COLOR_BGR2RGB))
-    plt.title(f"Grad-CAM Heatmap (Predicted: {predicted_class})")
-    plt.axis('off')
-    plt.savefig('fig.png')
+    # plt.figure(figsize=(8, 8))
+    # plt.imshow(cv2.cvtColor(heatmap_img, cv2.COLOR_BGR2RGB))
+    # plt.title(f"Grad-CAM Heatmap (Predicted: {predicted_class})")
+    # plt.axis('off')
+    # plt.savefig('fig.png')
     
     # Make predictions
     # filename = './fractno.png'
