@@ -5,7 +5,7 @@ import pandas as pd
 import tensorflow as tf
 from math import ceil
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Any
 
 import cv2
 from PIL import Image
@@ -49,8 +49,25 @@ class Classifier:
                  model_name: str = 'OwnV1',
                  img_size: Tuple[int, int] = (150, 150),
                  data_dir: Optional[str] = None,
-                 class_labels: Optional[Dict[str, int]] = None):
-
+                 class_labels: Optional[Dict[str, int]] = None) -> None:
+        """
+        Initialize the Classifier with specified configuration.
+        
+        Args:
+            model_name: Name of the model architecture to use
+            img_size: Target image dimensions as (width, height)
+            data_dir: Path to the root data directory containing class subdirectories
+            class_labels: Optional manual mapping of class names to indices.
+                         If None, will auto-detect from directory structure.
+        
+        Raises:
+            ValueError: If model_name is not in AVAILABLE_MODELS
+        """
+        
+        if model_name not in self.AVAILABLE_MODELS:
+                    raise ValueError(f"Model '{model_name}' not supported. Available models: {self.AVAILABLE_MODELS}")
+        
+        
         self.model_name = model_name
         self.img_size = img_size
         self.img_shape = (*img_size, 3)
@@ -63,32 +80,45 @@ class Classifier:
         self.model = None
         self.history = None
         self.train_generator = None
+        self.val_generator = None
         self.test_generator = None
         
         self._setup_environment()
 
-    def _setup_environment(self):
-        """Configure GPU settings and optimize TensorFlow."""
+    def _setup_environment(self) -> None:
+        """Configure GPU settings and optimize TensorFlow environment."""
         # Configure GPU memory growth
         physical_devices = tf.config.list_physical_devices('GPU')
         if physical_devices:
             try:
                 tf.config.experimental.set_memory_growth(physical_devices[0], True)
             except RuntimeError:
-                pass  # Memory growth must be set before GPUs have been initialized
+                pass
     
-        # Silence TensorFlow logs
+        # Suppress TensorFlow info/warning messages
+        # 0=all, 1=no INFO, 2=no INFO/WARNING, 3=no INFO/WARNING/ERROR
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-            # 0 = all messages are logged (default behavior)
-            # 1 = INFO messages are not printed
-            # 2 = INFO and WARNING messages are not printed
-            # 3 = INFO, WARNING, and ERROR messages are not printed
 
-    def _detect_classes(self) -> Dict[str, int]:
-        """Auto-detect class labels from directory structure."""
+    def _detect_classes(self) -> Dict[int, str]:
+        """
+        Auto-detect class labels from directory structure.
+        
+        Expects directory structure like:
+        data_dir/
+        ├── train/
+        │   ├── class1/
+        │   └── class2/
+        └── ...
+        
+        Returns:
+            Dictionary mapping class indices to class names
+            
+        Raises:
+            SystemExit: If data_dir is None or train directory doesn't exist
+        """
         if not self.data_dir:
-            print("No data directory")
-            exit()
+            print("Error: No data directory specified")
+            exit(1)
         
         train_dir = Path(self.data_dir) / 'train'
         if not train_dir.exists():
@@ -98,29 +128,30 @@ class Classifier:
             classes = sorted([d.name for d in train_dir.iterdir() if d.is_dir()])
             return {idx: cls for idx, cls in enumerate(classes)}
         
-        return {}
+        print(f"Error: Training directory not found at {train_dir}")
+        exit(1)
 
     def setup_data_generators(self,
                             train_dir: str,
                             val_dir: str,
                             test_dir: str,
-                            batch_size: int = 32,
+                            batch_size: int = 16,
                             seed: int = 42) -> Tuple[int, int, int]:
         """
-        Setup data generators for training, validation, and testing.
+        Setup data generators for training, validation, and testing with augmentation.
         
         Args:
             train_dir: Path to training data directory
-            val_dir: Path to validation data directory
+            val_dir: Path to validation data directory  
             test_dir: Path to test data directory
-            batch_size: Batch size for training
+            batch_size: Batch size for data loading
             seed: Random seed for reproducibility
             
         Returns:
-            Tuple of (steps_per_epoch, validation_steps, test_steps)
+            Tuple containing (steps_per_epoch, validation_steps, test_steps)
         """
         # Default augmentation config
-        default_augmentation = {
+        augmentation_config = {
             'rotation_range': 10,
             'brightness_range': (0.9, 1.1),
             'width_shift_range': 0.005,
@@ -130,13 +161,7 @@ class Classifier:
         }
         
         # Create data generators
-        # Training generator with augmentation
-        train_datagen = ImageDataGenerator(
-            rescale=1./255,
-            **default_augmentation
-        )
-        
-        # Validation and test generators without augmentation (only rescaling)
+        train_datagen = ImageDataGenerator(rescale=1./255, **augmentation_config)
         val_datagen = ImageDataGenerator(rescale=1./255)
         test_datagen = ImageDataGenerator(rescale=1./255)
         
@@ -145,7 +170,7 @@ class Classifier:
             train_dir,
             target_size=self.img_size,
             batch_size=batch_size,
-            class_mode='binary',  # or 'binary' for binary classification
+            class_mode='binary',
             seed=seed,
             shuffle=True
         )
@@ -154,7 +179,7 @@ class Classifier:
             val_dir,
             target_size=self.img_size,
             batch_size=batch_size,
-            class_mode='binary',  # or 'binary' for binary classification
+            class_mode='binary',
             shuffle=False,
             seed=seed
         )
@@ -163,7 +188,7 @@ class Classifier:
             test_dir,
             target_size=self.img_size,
             batch_size=batch_size,
-            class_mode='binary',  # or 'binary' for binary classification
+            class_mode='binary',
             shuffle=False,
             seed=seed
         )
@@ -172,7 +197,7 @@ class Classifier:
         self.class_labels = {v: k for k, v in self.train_generator.class_indices.items()}
         self.num_classes = len(self.class_labels)
         
-        # Calculate steps for each dataset
+        # Calculate steps for training
         steps_per_epoch = ceil(self.train_generator.samples / batch_size)
         validation_steps = ceil(self.val_generator.samples / batch_size)
         test_steps = ceil(self.test_generator.samples / batch_size)
@@ -180,22 +205,17 @@ class Classifier:
         return steps_per_epoch, validation_steps, test_steps
 
     def build_model(self) -> bool:
-        """Build the specified model architecture."""
+        """
+        Build the specified model architecture.
+        
+        Supports custom architectures (SimpleNet, OwnV1, OwnV2, AlexNet) and
+        transfer learning models (VGG16, VGG19, ResNet50, InceptionV3, etc.).
+        
+        Returns:
+            True if model was built successfully, False otherwise
+        """
         try:
-            if self.model_name == 'SimpleNet':
-                self.model = Sequential([
-                    InputLayer(input_shape=self.img_shape),  
-                    Conv2D(filters=16, kernel_size=3, activation='relu', padding='same'),
-                    MaxPooling2D(pool_size=2),
-                    Conv2D(filters=32, kernel_size=3, activation='relu'),
-                    MaxPooling2D(pool_size=2),
-                    Flatten(),
-                    Dense(64, activation='relu'),
-                    # Dense(self.num_classes, activation='softmax')
-                    Dense(1, activation='sigmoid')
-                ])
-            
-            elif self.model_name == 'OwnV1':
+            if self.model_name == 'OwnV1':
                 self.model = Sequential([
                     InputLayer(input_shape=self.img_shape, name='input_layer'),
                     
@@ -229,24 +249,6 @@ class Classifier:
                     # Output Layer
                     # Dense(self.num_classes, activation='softmax', name='output')
                     Dense(1, activation='sigmoid', name='output')
-                ])
-            
-            elif self.model_name == 'OwnV2':
-                self.model = Sequential([
-                    Conv2D(64, (12,12), strides=(5,5), activation='relu', input_shape=self.img_shape),
-                    MaxPooling2D((3,3), strides=(2,2)),
-                    BatchNormalization(),
-                    Conv2D(128, (6,6), strides=(2,2), activation='relu', padding='same'),
-                    MaxPooling2D((3,3), strides=(2,2)),
-                    BatchNormalization(),
-                    Conv2D(256, (3,3), activation='relu', padding='same'),
-                    MaxPooling2D((3,3), strides=(2,2)),
-                    BatchNormalization(),
-                    Flatten(),
-                    Dense(1024, activation='relu'),
-                    Dropout(0.5),
-                    # Dense(self.num_classes, activation='softmax')
-                    Dense(1, activation='sigmoid')
                 ])
             
             elif self.model_name == 'AlexNet':
@@ -309,29 +311,42 @@ class Classifier:
             return False
         
         
-    def generate_gradcam_heatmap(self, image_path: str, conv_layer_name: Optional[str] = None, alpha: float = 0.5):
+    def generate_gradcam_heatmap(self, 
+                               image_path: str, 
+                               conv_layer_name: Optional[str] = None, 
+                               alpha: float = 0.5) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Generates a Grad-CAM heatmap for a given image.
-
+        Generate Grad-CAM heatmap for model interpretability.
+        
+        Grad-CAM (Gradient-weighted Class Activation Mapping) visualizes which parts
+        of the image are important for the model's prediction by highlighting regions
+        that strongly influence the classification decision.
+        
         Args:
-            image_path (str): Path to the input image file.
-            conv_layer_name (Optional[str]): The name of the last convolutional layer. 
-                                             If None, it's detected automatically.
-            alpha (float): The transparency factor for overlaying the heatmap.
-
+            image_path: Path to the input image file
+            conv_layer_name: Name of the convolutional layer to analyze.
+                           If None, automatically uses the last Conv2D layer
+            alpha: Transparency factor for heatmap overlay (0.0-1.0)
+            
         Returns:
-            A superimposed image with the heatmap overlay.
+            Tuple containing:
+                - superimposed_img: Original image with heatmap overlay
+                - heatmap: Raw heatmap visualization
+                - original_img: Original preprocessed image
+                
+        Raises:
+            ValueError: If model hasn't been trained/loaded or no Conv2D layers found
         """
         if self.model is None:
             raise ValueError("Model has not been trained or loaded yet.")
 
-        # 1. Preprocess the image
+        # Preprocess the input image
         img = tf.keras.preprocessing.image.load_img(image_path, target_size=self.img_size)
         img_array = tf.keras.preprocessing.image.img_to_array(img)
         img_array = np.expand_dims(img_array, axis=0)
-        img_array = img_array / 255.0  # Rescale
+        img_array = img_array / 255.0
 
-        # 2. Find the last convolutional layer if not provided
+        # Find the last convolutional layer if not specified
         if conv_layer_name is None:
             for layer in reversed(self.model.layers):
                 if isinstance(layer, Conv2D):
@@ -340,45 +355,38 @@ class Classifier:
             if conv_layer_name is None:
                 raise ValueError("Could not find a Conv2D layer in the model.")
         
-        # 3. Create the Grad-CAM model
-        # This is the key part that fixes the issue for Sequential models.
-        # We create the model here, after self.model is already built.
+        # Create Grad-CAM model
         grad_model = Model(
             inputs=[self.model.inputs],
             outputs=[self.model.get_layer(conv_layer_name).output, self.model.layers[-1].output]
         )
 
-        # 4. REVISED: Compute gradients with explicit tape context
+        # Compute gradients
         with tf.GradientTape() as tape:
             conv_outputs, predictions = grad_model(img_array)
-            # For binary classification with sigmoid, the prediction is the score
+            # For binary classification with sigmoid activation
             predicted_class = tf.cast(predictions[0][0] > 0.5, tf.float32)
             loss = predicted_class * predictions[0][0] + (1 - predicted_class) * (1 - predictions[0][0])
-            
             # loss = predictions[0][0] if predictions[0][0] > 0.5 else (1 - predictions[0][0])
 
-
-        # Compute gradients of the loss with respect to the conv layer's output
+        # Calculate gradients of loss with respect to conv layer output
         grads = tape.gradient(loss, conv_outputs)
 
-        # Add a check to catch the error gracefully
         if grads is None:
             raise ValueError(
-                "Gradient is None. Check that all layers between your last conv "
-                f"layer ('{conv_layer_name}') and the output are differentiable. "
-                "This can also happen with some Keras/TensorFlow versions."
+                f"Gradient is None. Check that all layers between '{conv_layer_name}' "
+                "and the output are differentiable."
             )
 
-        # 5. REVISED: Pool gradients and create heatmap
-        # We use grads[0] because grads has a batch dimension we need to remove.
+        # Pool gradients and create heatmap
         pooled_grads = tf.reduce_mean(grads[0], axis=(0, 1))
         pooled_grads = pooled_grads / (tf.norm(pooled_grads) + 1e-8)
         
-        # Weight the feature maps by the gradients
+        # Weight feature maps by gradients
         heatmap = conv_outputs[0] @ pooled_grads[..., tf.newaxis]
-        heatmap = tf.squeeze(heatmap) # Remove the last dimension
+        heatmap = tf.squeeze(heatmap)
 
-        # For visualization, we still normalize the heatmap
+        # Normalize heatmap for visualization
         heatmap = np.maximum(heatmap, 0)
         max_heat = np.max(heatmap)
         if max_heat == 0:
@@ -388,7 +396,7 @@ class Classifier:
         heatmap = np.uint8(255 * heatmap)
         heatmap = cv2.applyColorMap(heatmap, cv2.COLORMAP_JET)
 
-        # 6. Superimpose heatmap on the original image (same as before)
+        # Superimpose heatmap on original image
         original_img = cv2.imread(image_path)
         original_img = cv2.resize(original_img, self.img_size)
         
@@ -396,9 +404,17 @@ class Classifier:
         
         return superimposed_img, heatmap, original_img
     
-    def test_multiple_layers(self, image_path: str, alpha: float = 0.5):
+    # Hard coded layer names for OwnV1 model
+    def test_multiple_layers(self, image_path: str, alpha: float = 0.5) -> None:
         """
-        Test Grad-CAM with multiple conv layers to find the best one.
+        Test Grad-CAM visualization with multiple convolutional layers.
+        
+        Creates a 2x2 grid showing Grad-CAM heatmaps for different layers,
+        useful for understanding how different network depths capture features.
+        
+        Args:
+            image_path: Path to the input image
+            alpha: Transparency factor for heatmap overlay
         """
         layers_to_test = ['conv1', 'conv2', 'conv3', 'conv4_last']
         
@@ -407,7 +423,7 @@ class Classifier:
         
         for i, layer_name in enumerate(layers_to_test):
             try:
-                superimposed_img, heatmap, original = self.generate_gradcam_heatmap(
+                superimposed_img, _, _ = self.generate_gradcam_heatmap(
                     image_path, conv_layer_name=layer_name, alpha=alpha
                 )
                 
@@ -421,7 +437,8 @@ class Classifier:
                 axes[i].set_title(f'Layer: {layer_name} (Error)')
         
         plt.tight_layout()
-        plt.savefig('figs.png')
+        plt.savefig('gradcam_layers_comparison.png', dpi=300, bbox_inches='tight')
+        plt.show()
     
 
     def train(self, 
@@ -435,31 +452,29 @@ class Classifier:
               early_stopping: bool = True,
               save_best: bool = True,
               checkpoint_dir: str = './checkpoints',
-              verbose: int = 1) -> Dict:
+              verbose: int = 1) -> Dict[str, Any]:
         """
-        Train the model.
+        Train the model with comprehensive monitoring and callbacks.
         
         Args:
-            train_dir: Path to training data
-            test_dir: Path to test data (optional)
-            epochs: Number of training epochs
-            batch_size: Batch size
-            learning_rate: Learning rate
-            optimizer: Optimizer type ('adam', 'adamax', 'sgd')
-            early_stopping: Whether to use early stopping
-            save_best: Whether to save best model
-            checkpoint_dir: Directory to save checkpoints
+            train_dir: Path to training data directory
+            val_dir: Path to validation data directory
+            test_dir: Path to test data directory
+            epochs: Maximum number of training epochs
+            batch_size: Batch size for training
+            learning_rate: Initial learning rate
+            optimizer: Optimizer type ('adam', 'adamw', 'sgd')
+            early_stopping: Whether to use early stopping based on validation AUC
+            save_best: Whether to save the best model during training
+            checkpoint_dir: Directory to save model checkpoints
             verbose: Verbosity level
             
         Returns:
-            Dictionary with training results
+            Dictionary containing training results and metrics
         """
         start_time = time.time()
     
         # Setup data generators
-        # steps_per_epoch, validation_steps = self.setup_data_generators(
-        #     train_dir, test_dir, batch_size
-        # )
         steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(
             train_dir=train_dir,
             val_dir=val_dir,
@@ -467,10 +482,10 @@ class Classifier:
             batch_size=batch_size
         )
         
-        
         # Build model
         if not self.build_model():
             return {'error': 'Failed to build model'}
+        
         
         # Compile model
         #region
@@ -479,28 +494,29 @@ class Classifier:
                 learning_rate=learning_rate, 
                 beta_1=0.9, 
                 beta_2=0.999,
-                epsilon=1e-7  # Better numerical stability
+                epsilon=1e-7
             ),
-            'adamw': AdamW(  # Often better for vision tasks
+            'adamw': AdamW(
                 learning_rate=learning_rate,
                 weight_decay=0.01
             ),
             'sgd': SGD(
                 learning_rate=learning_rate,
                 momentum=0.9,
-                nesterov=True  # Often helps with convergence
+                nesterov=True
             )
         }
         
+        # Compile model
         self.model.compile(
-            optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999)),
+            optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate)),
             loss='binary_crossentropy',
             metrics=[
                 'accuracy',
                 tf.keras.metrics.Precision(name='precision'),
                 tf.keras.metrics.Recall(name='recall'),
                 tf.keras.metrics.AUC(name='auc'),
-                tf.keras.metrics.F1Score(name='f1_score')  # Available in TF 2.15+
+                tf.keras.metrics.F1Score(name='f1_score')
             ]
         )
         
@@ -514,18 +530,18 @@ class Classifier:
         
         if early_stopping:
             callbacks.append(EarlyStopping(
-                monitor='val_auc',  # Better than val_loss for medical imaging
-                patience=10,        # Increase patience for medical data
+                monitor='val_auc',
+                patience=10,
                 restore_best_weights=True,
                 verbose=verbose,
-                mode='max'  # AUC should be maximized
+                mode='max'
             ))
         
         callbacks.append(ReduceLROnPlateau(
             monitor='val_auc',
-            factor=0.5,        # Less aggressive reduction
-            patience=5,        # Reduce patience
-            min_lr=1e-8,       # Lower minimum
+            factor=0.5,
+            patience=5,
+            min_lr=1e-8,
             verbose=verbose,
             mode='max'
         ))
@@ -534,7 +550,7 @@ class Classifier:
             os.makedirs(checkpoint_dir, exist_ok=True)
             callbacks.append(ModelCheckpoint(
                 filepath=os.path.join(checkpoint_dir, 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'),
-                monitor='val_auc',              # Better metric for medical imaging
+                monitor='val_auc',
                 save_best_only=True,
                 save_weights_only=False,
                 verbose=verbose,
@@ -564,17 +580,17 @@ class Classifier:
             'accuracy': results_dict['accuracy'],
             'training_time': training_time,
             'epochs_trained': len(self.history.history['loss']),
-            # optionally add the rest:
             'precision': results_dict['precision'],
             'recall': results_dict['recall'],
             'auc': results_dict['auc'],
             'f1_score': results_dict['f1_score'],
         }
         
-        print("\nTraining completed!")
-        print(f"Final accuracy: {results_dict['accuracy']:.4f}")
-        print(f"Final loss: {results_dict['loss']:.4f}")
-        print(f"Training time: {training_time:.2f} seconds")
+        if verbose > 0:
+            print("\nTraining completed!")
+            print(f"Final accuracy: {results['accuracy']:.4f}")
+            print(f"Final AUC: {results['auc']:.4f}")
+            print(f"Training time: {training_time:.2f} seconds")
         
         return results
     
@@ -583,10 +599,16 @@ class Classifier:
         Predict class for a single image.
         
         Args:
-            image_path: Path to image file
+            image_path: Path to the image file to classify
             
         Returns:
-            Tuple of (predicted_class, confidence, all_probabilities)
+            Tuple containing:
+                - predicted_class: Name of the predicted class
+                - confidence: Confidence score for the prediction
+                - probabilities: Dictionary with probabilities for all classes
+                
+        Raises:
+            ValueError: If model hasn't been trained or loaded
         """
         if self.model is None:
             raise ValueError("Model not trained or loaded")
@@ -600,19 +622,11 @@ class Classifier:
         raw_pred = self.model.predict(img_array, verbose=0)
 
         if self.num_classes == 2:
-            # Binary classification: sigmoid → float output
+            # Binary classification
             prob_class_1 = float(raw_pred[0])
             prob_class_0 = 1.0 - prob_class_1
-
-            # Map labels to values
-            class_names = list(self.class_labels.keys())
             
             predicted_idx = 1 if prob_class_1 >= 0.5 else 0
-            
-            # print(predicted_idx)
-            # print(self.class_labels)
-            # print(self.class_labels[predicted_idx])
-            
             predicted_class = self.class_labels[predicted_idx]
             confidence = max(prob_class_0, prob_class_1)
 
@@ -622,27 +636,42 @@ class Classifier:
             }
 
         else:
-            # Multiclass
+            # Multiclass classification
             predictions = raw_pred[0]
             predicted_idx = np.argmax(predictions)
-            idx_to_class = {v: k for k, v in self.class_labels.items()}
-
-            predicted_class = idx_to_class[predicted_idx]
-            confidence = predictions[predicted_idx]
-            probabilities = {idx_to_class[i]: float(prob) for i, prob in enumerate(predictions)}
+            
+            predicted_class = self.class_labels[predicted_idx]
+            confidence = float(predictions[predicted_idx])
+            probabilities = {self.class_labels[i]: float(prob) 
+                           for i, prob in enumerate(predictions)}
 
         return predicted_class, confidence, probabilities
     
-    def load_model(self, model_path: str):
-        """Load a saved model."""
+    def load_model(self, model_path: str) -> None:
+        """
+        Load a saved model from disk.
+        
+        Args:
+            model_path: Path to the saved model file
+        """
         self.model = tf.keras.models.load_model(model_path)
         print(f"Model loaded from {model_path}")
     
-    def save_model(self, model_path: str):
-        """Save the current model."""
+    def save_model(self, model_path: str) -> None:
+        """
+        Save the current model to disk.
+        
+        Args:
+            model_path: Path where the model should be saved
+            
+        Raises:
+            ValueError: If no model exists to save
+        """
         if self.model is None:
-            print("No model to save")
-            return
+            raise ValueError("No model to save")
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
         self.model.save(model_path)
         print(f"Model saved to {model_path}")
 
@@ -678,7 +707,7 @@ class Classifier:
         ax2.grid(True)
         
         plt.tight_layout()
-        plt.show()
+        plt.savefig('plot_training_history.png')
     
     def plot_confusion_matrix(self, normalize: bool = False):
         """Plot confusion matrix."""
@@ -717,7 +746,7 @@ class Classifier:
         plt.ylabel('True Label')
         plt.xlabel('Predicted Label')
         plt.tight_layout()
-        plt.show()
+        plt.savefig('plot_confusion_matrix.png')
         
         # Print classification report
         class_names = [self.class_labels[i] for i in range(self.num_classes)]
@@ -782,9 +811,10 @@ if __name__ == "__main__":
     #     train_dir=train_dir,
     #     val_dir=val_dir,
     #     test_dir=test_dir,
-    #     epochs=30,
+    #     epochs=3,
     #     batch_size=32,
-    #     learning_rate=0.001
+    #     learning_rate=0.001,
+    #     verbose=0
     # )
     
     # Load the model
@@ -799,30 +829,19 @@ if __name__ == "__main__":
     predicted_class, confidence, _ = classifier.predict(image_to_test)
     print(f"Prediction for '{image_to_test}': {predicted_class} with {confidence:.2%} confidence.")
 
-    # Generate the heatmap
-    # You can specify the last conv layer name from your OwnV1 model ('conv4_last')
-    # or let the function find it automatically by passing None.
     # heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
     heatmap_img = classifier.test_multiple_layers(image_to_test)
     
-    
-    # Display the result using matplotlib
-    # plt.figure(figsize=(8, 8))
-    # plt.imshow(cv2.cvtColor(heatmap_img, cv2.COLOR_BGR2RGB))
-    # plt.title(f"Grad-CAM Heatmap (Predicted: {predicted_class})")
-    # plt.axis('off')
-    # plt.savefig('fig.png')
-    
     # Make predictions
-    # filename = './fractno.png'
-    # prediction, confidence, probabilities = classifier.predict(filename)
-    # print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
+    filename = './fractno.png'
+    prediction, confidence, probabilities = classifier.predict(filename)
+    print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
     
-    # filename = './fractno.png'
-    # prediction, confidence, probabilities = classifier.predict(filename)
-    # print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
+    filename = './fractno.png'
+    prediction, confidence, probabilities = classifier.predict(filename)
+    print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
 
     # Plot results
-    # classifier.plot_training_history()
-    # classifier.plot_confusion_matrix()
+    classifier.plot_training_history()
+    classifier.plot_confusion_matrix()
     
