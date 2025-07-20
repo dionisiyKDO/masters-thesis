@@ -34,9 +34,6 @@ ImageFile.LOAD_TRUNCATED_IMAGES = True
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
-from scipy.ndimage import zoom
-from tensorflow.keras.applications.resnet50 import preprocess_input, decode_predictions
-
 
 class Classifier:
     
@@ -72,6 +69,7 @@ class Classifier:
         self.img_size = img_size
         self.img_shape = (*img_size, 3)
         self.data_dir = data_dir
+        self.train_dir, self.val_dir, self.test_dir = self._detect_data_structure()
         
         # Auto-detect classes from directory structure or use provided labels
         self.class_labels = class_labels or self._detect_classes()
@@ -108,7 +106,12 @@ class Classifier:
         ├── train/
         │   ├── class1/
         │   └── class2/
-        └── ...
+        ├── test/
+        │   ├── class1/
+        │   └── class2/
+        └── val/ (optional)
+            ├── class1/
+            └── class2/
         
         Returns:
             Dictionary mapping class indices to class names
@@ -131,6 +134,33 @@ class Classifier:
         print(f"Error: Training directory not found at {train_dir}")
         exit(1)
 
+    def _detect_data_structure(self) -> Tuple[str, Optional[str], str]:
+        """
+        Automatically detect train, validation, and test directories.
+        
+        Returns:
+            Tuple of (train_dir, val_dir, test_dir) paths
+        """
+        if not self.data_dir:
+            raise ValueError("No data directory specified")
+            
+        data_path = Path(self.data_dir)
+        
+        # Check for standard structure: data_dir/train/, data_dir/test/, data_dir/val/
+        train_dir = data_path / 'train'
+        test_dir = data_path / 'test'
+        val_dir = data_path / 'val'
+        
+        if train_dir.exists() and test_dir.exists():
+            val_path = str(val_dir) if val_dir.exists() else None
+            return str(train_dir), val_path, str(test_dir)
+        
+        # If standard structure not found, raise an error
+        raise ValueError(
+            f"Expected directory structure not found in {self.data_dir}. "
+            "Expected: train/ and test/ directories (val/ is optional)"
+        )
+    
     def setup_data_generators(self,
                             train_dir: str,
                             val_dir: str,
@@ -165,12 +195,15 @@ class Classifier:
         val_datagen = ImageDataGenerator(rescale=1./255)
         test_datagen = ImageDataGenerator(rescale=1./255)
         
+        # Determine class_mode based on number of classes
+        class_mode = 'binary' if self.num_classes == 2 else 'categorical'
+        
         # Setup generators
         self.train_generator = train_datagen.flow_from_directory(
             train_dir,
             target_size=self.img_size,
             batch_size=batch_size,
-            class_mode='binary',
+            class_mode=class_mode,
             seed=seed,
             shuffle=True
         )
@@ -179,7 +212,7 @@ class Classifier:
             val_dir,
             target_size=self.img_size,
             batch_size=batch_size,
-            class_mode='binary',
+            class_mode=class_mode,
             shuffle=False,
             seed=seed
         )
@@ -188,7 +221,7 @@ class Classifier:
             test_dir,
             target_size=self.img_size,
             batch_size=batch_size,
-            class_mode='binary',
+            class_mode=class_mode,
             shuffle=False,
             seed=seed
         )
@@ -366,8 +399,11 @@ class Classifier:
             conv_outputs, predictions = grad_model(img_array)
             # For binary classification with sigmoid activation
             predicted_class = tf.cast(predictions[0][0] > 0.5, tf.float32)
-            loss = predicted_class * predictions[0][0] + (1 - predicted_class) * (1 - predictions[0][0])
-            # loss = predictions[0][0] if predictions[0][0] > 0.5 else (1 - predictions[0][0])
+            
+            # loss computations
+            loss = predictions[0][0] # show only fractured heatmap
+            # loss = predicted_class * predictions[0][0] + (1 - predicted_class) * (1 - predictions[0][0]) # show whatever is predicted
+            # loss = predictions[0][0] if predictions[0][0] > 0.5 else (1 - predictions[0][0]) # show whatever is predicted
 
         # Calculate gradients of loss with respect to conv layer output
         grads = tape.gradient(loss, conv_outputs)
@@ -676,19 +712,46 @@ class Classifier:
         print(f"Model saved to {model_path}")
 
 
-    def plot_training_history(self):
-        """Plot training history."""
+
+    def plot_confusion_matrix(self, normalize: bool = False, save_path: Optional[str] = None):
+        if self.model is None or self.test_generator is None:
+            print("Model or test data not available")
+            return
+
+        y_true = self.test_generator.classes
+        y_pred = self.model.predict(self.test_generator, verbose=0)
+        
+        if self.num_classes == 2:
+            y_pred_classes = (y_pred > 0.5).astype(int).flatten()
+        else:
+            y_pred_classes = np.argmax(y_pred, axis=1)
+
+        cm = confusion_matrix(y_true, y_pred_classes)
+        if normalize:
+            cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+
+        plt.figure(figsize=(8, 6))
+        sns.heatmap(cm, annot=True, fmt='.2f' if normalize else 'd', 
+                    cmap='Blues', xticklabels=self.class_labels.values(), 
+                    yticklabels=self.class_labels.values())
+        plt.title('Confusion Matrix')
+        plt.ylabel('True Label')
+        plt.xlabel('Predicted Label')
+        plt.tight_layout()
+        
+        save_path = save_path or f'confusion_matrix_{int(time.time())}.png'
+        plt.savefig(save_path)
+        plt.close()
+
+    def plot_training_history(self, save_path: Optional[str] = None):
         if self.history is None:
             print("No training history available")
             return
-        
+
         history = self.history.history
         epochs = range(1, len(history['loss']) + 1)
-        
-        # Create subplots
+
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
-        
-        # Plot accuracy
         ax1.plot(epochs, history['accuracy'], 'b-', label='Training Accuracy')
         ax1.plot(epochs, history['val_accuracy'], 'r-', label='Validation Accuracy')
         ax1.set_title('Model Accuracy')
@@ -696,8 +759,7 @@ class Classifier:
         ax1.set_ylabel('Accuracy')
         ax1.legend()
         ax1.grid(True)
-        
-        # Plot loss
+
         ax2.plot(epochs, history['loss'], 'b-', label='Training Loss')
         ax2.plot(epochs, history['val_loss'], 'r-', label='Validation Loss')
         ax2.set_title('Model Loss')
@@ -705,54 +767,12 @@ class Classifier:
         ax2.set_ylabel('Loss')
         ax2.legend()
         ax2.grid(True)
-        
-        plt.tight_layout()
-        plt.savefig('plot_training_history.png')
-    
-    def plot_confusion_matrix(self, normalize: bool = False):
-        """Plot confusion matrix."""
-        if self.model is None or self.test_generator is None:
-            print("Model or test data not available")
-            return
-        
-        # Get predictions
-        y_pred = self.model.predict(self.test_generator, verbose=0)
-        y_pred_classes = np.argmax(y_pred, axis=1)
-        y_true = self.test_generator.classes
-        
-        # Compute confusion matrix
-        cm = confusion_matrix(y_true, y_pred_classes)
-        if normalize:
-            cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
-        
-        # Plot
-        plt.figure(figsize=(8, 6))
-        plt.imshow(cm, interpolation='nearest', cmap=plt.cm.Blues)
-        plt.title('Confusion Matrix')
-        plt.colorbar()
-        
-        classes = [self.class_labels[i] for i in range(self.num_classes)]
-        tick_marks = np.arange(len(classes))
-        plt.xticks(tick_marks, classes, rotation=45)
-        plt.yticks(tick_marks, classes)
-        
-        # Add text annotations
-        thresh = cm.max() / 2.
-        for i, j in np.ndindex(cm.shape):
-            plt.text(j, i, f'{cm[i, j]:.2f}' if normalize else f'{cm[i, j]}',
-                    horizontalalignment="center",
-                    color="white" if cm[i, j] > thresh else "black")
-        
-        plt.ylabel('True Label')
-        plt.xlabel('Predicted Label')
-        plt.tight_layout()
-        plt.savefig('plot_confusion_matrix.png')
-        
-        # Print classification report
-        class_names = [self.class_labels[i] for i in range(self.num_classes)]
-        print("\nClassification Report:")
-        print(classification_report(y_true, y_pred_classes, target_names=class_names))
 
+        plt.tight_layout()
+        save_path = save_path or f'training_history_{int(time.time())}.png'
+        plt.savefig(save_path)
+        plt.close()
+    
     def plot_data_distribution(self, train_labels, test_labels):
         # Calculate class counts for training and testing data
         train_class_counts = [len([x for x in train_labels if x == label]) for label in self.class_labels.keys()]
@@ -795,7 +815,6 @@ class Classifier:
 
 
 if __name__ == "__main__":
-    # Initialize classifier
     train_dir = './data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/train'
     val_dir = './data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/val'
     test_dir = './data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/test'
@@ -805,7 +824,7 @@ if __name__ == "__main__":
         img_size=(150, 150),
         data_dir=test_dir
     )
-     
+    
     # Train the model
     # results = classifier.train(
     #     train_dir=train_dir,
@@ -818,30 +837,13 @@ if __name__ == "__main__":
     # )
     
     # Load the model
-    # classifier.load_model('./checkpoints/Bone_fracture_OwnV1_epoch_17_val_1-00000.h5')
     classifier.load_model('checkpoints/model.epoch19-val_acc0.9940.hdf5')
     
-    
-    # Provide the path to an image you want to inspect
     image_to_test = 'data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/val/fractured/54d38979da5d67c85b1df0919c12d4_jumbo.jpeg'
-    
-    # Get the class prediction
     predicted_class, confidence, _ = classifier.predict(image_to_test)
     print(f"Prediction for '{image_to_test}': {predicted_class} with {confidence:.2%} confidence.")
-
+    
     # heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
-    heatmap_img = classifier.test_multiple_layers(image_to_test)
-    
-    # Make predictions
-    filename = './fractno.png'
-    prediction, confidence, probabilities = classifier.predict(filename)
-    print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
-    
-    filename = './fractno.png'
-    prediction, confidence, probabilities = classifier.predict(filename)
-    print(f"File: {filename} Predicted: {prediction} (confidence: {confidence:.2f})")
-
-    # Plot results
+    classifier.test_multiple_layers(image_to_test)
     classifier.plot_training_history()
     classifier.plot_confusion_matrix()
-    
