@@ -1,6 +1,7 @@
 import os
 import time
 import warnings
+import logging
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -30,6 +31,17 @@ from tensorflow.keras.layers import (
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 warnings.filterwarnings("ignore", category=UserWarning)
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('classifier.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 
 class Classifier:
     
@@ -38,11 +50,14 @@ class Classifier:
         'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2'
     ]
     
+    SUPPORTED_IMAGE_FORMATS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+    
     def __init__(self, 
                  model_name: str = 'OwnV1',
                  img_size: Tuple[int, int] = (150, 150),
                  data_dir: Optional[str] = None,
-                 class_labels: Optional[Dict[str, int]] = None) -> None:
+                 class_labels: Optional[Dict[str, int]] = None,
+                 min_images_per_class: int = 10) -> None:
         """
         Initialize the Classifier with specified configuration.
         
@@ -52,24 +67,37 @@ class Classifier:
             data_dir: Path to the root data directory containing class subdirectories
             class_labels: Optional manual mapping of class names to indices.
                          If None, will auto-detect from directory structure.
+            min_images_per_class: Minimum number of images required per class
         
         Raises:
             ValueError: If model_name is not in AVAILABLE_MODELS
         """
+        logger.info(f"Initializing Classifier with model: {model_name}, image size: {img_size}")
+        
         
         if model_name not in self.AVAILABLE_MODELS:
+            logger.error(f"Unsupported model '{model_name}'. Available: {self.AVAILABLE_MODELS}")
             raise ValueError(f"Model '{model_name}' not supported. Available models: {self.AVAILABLE_MODELS}")
-        
         
         self.model_name = model_name
         self.img_size = img_size
         self.img_shape = (*img_size, 3)
         self.data_dir = data_dir
+        self.min_images_per_class = min_images_per_class
+        
         self.train_dir, self.val_dir, self.test_dir = self._detect_data_structure()
         
         # Auto-detect classes from directory structure or use provided labels
         self.class_labels = class_labels or self._detect_classes()
         self.num_classes = len(self.class_labels)
+        
+        # Validate classification setup
+        if self.num_classes == 2:
+            logger.info("Binary classification mode detected")
+        elif self.num_classes > 10:
+            logger.warning(f"Large number of classes ({self.num_classes}) detected.\nConsider if this is intentional.")
+        else:
+            logger.info(f"Multi-class classification mode with {self.num_classes} classes")
         
         self.model = None
         self.history = None
@@ -78,36 +106,45 @@ class Classifier:
         self.test_generator = None
         
         self._setup_environment()
+        logger.info(f"Classifier initialization complete. Classes: {list(self.class_labels.values())}")
+
 
     def _setup_environment(self) -> None:
         """Configure GPU settings and optimize TensorFlow environment."""
+        logger.info("Setting up TensorFlow environment...")
+        
         # Configure GPU memory growth
         physical_devices = tf.config.list_physical_devices('GPU')
         if physical_devices:
             try:
                 tf.config.experimental.set_memory_growth(physical_devices[0], True)
-            except RuntimeError:
-                pass
+                logger.info(f"GPU memory growth enabled for device: {physical_devices[0]}")
+            except RuntimeError as e:
+                logger.warning(f"Could not set GPU memory growth: {e}")
+        else:
+            logger.info("No GPU devices found, using CPU")
     
         # Suppress TensorFlow info/warning messages
         # 0=all, 1=no INFO, 2=no INFO/WARNING, 3=no INFO/WARNING/ERROR
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+        logger.info("TensorFlow environment setup complete")
 
     def _detect_classes(self) -> Dict[int, str]:
         """
         Auto-detect class labels from directory structure.
         
         Expects directory structure like:
-        data_dir/
-        ├── train/
-        │   ├── class1/
-        │   └── class2/
-        ├── test/
-        │   ├── class1/
-        │   └── class2/
-        └── val/ (optional)
-            ├── class1/
-            └── class2/
+        
+            data_dir/
+            ├── train/
+            │   ├── class1/
+            │   └── class2/
+            ├── test/
+            │   ├── class1/
+            │   └── class2/
+            └── val/ (optional)
+                ├── class1/
+                └── class2/
         
         Returns:
             Dictionary mapping class indices to class names
@@ -115,19 +152,23 @@ class Classifier:
         Raises:
             SystemExit: If data_dir is None or train directory doesn't exist
         """
+        logger.info("Detecting classes from directory structure...")
+        
         if not self.data_dir:
-            print("Error: No data directory specified")
+            logger.error("No data directory specified")
             exit(1)
         
         train_dir = Path(self.data_dir) / 'train'
         if not train_dir.exists():
             train_dir = Path(self.data_dir)
+            logger.info(f"Standard train/ directory not found, using root: {train_dir}")
         
         if train_dir.exists():
             classes = sorted([d.name for d in train_dir.iterdir() if d.is_dir()])
+            logger.info(f"Found {len(classes)} valid classes: {classes}")
             return {idx: cls for idx, cls in enumerate(classes)}
         
-        print(f"Error: Training directory not found at {train_dir}")
+        logger.error( f"Train directory '{train_dir}' does not exist. ")
         exit(1)
 
     def _detect_data_structure(self) -> Tuple[str, Optional[str], str]:
@@ -138,9 +179,11 @@ class Classifier:
             Tuple of (train_dir, val_dir, test_dir) paths
         """
         if not self.data_dir:
+            logger.error("No data directory specified")
             raise ValueError("No data directory specified")
             
         data_path = Path(self.data_dir)
+        logger.info(f"Analyzing data structure in: {data_path}")
         
         # Check for standard structure: data_dir/train/, data_dir/test/, data_dir/val/
         train_dir = data_path / 'train'
@@ -149,9 +192,12 @@ class Classifier:
         
         if train_dir.exists() and test_dir.exists():
             val_path = str(val_dir) if val_dir.exists() else None
+            logger.info(f"Standard structure detected - Train: {train_dir}, "
+                       f"Test: {test_dir}, Val: {val_path or 'None (will split from train)'}")
             return str(train_dir), val_path, str(test_dir)
         
         # If standard structure not found, raise an error
+        logger.error(f"Expected directory structure not found in {self.data_dir}")
         raise ValueError(
             f"Expected directory structure not found in {self.data_dir}. "
             "Expected: train/ and test/ directories (val/ is optional)"
@@ -167,21 +213,18 @@ class Classifier:
         """
         Setup data generators for training, validation, and testing with augmentation.
         
-        Args:
-            train_dir: Path to training data directory
-            val_dir: Path to validation data directory  
-            test_dir: Path to test data directory
-            batch_size: Batch size for data loading
-            seed: Random seed for reproducibility
-            val_split: Fraction of training data to reserve for validation (if val_dir is missing)
-            
         Returns:
             Tuple containing (steps_per_epoch, validation_steps, test_steps)
         """
+        logger.info("Setting up data generators...")
+        
         # Use auto-detected directories if not provided
         train_dir = train_dir or self.train_dir
         val_dir = val_dir or self.val_dir
         test_dir = test_dir or self.test_dir
+        
+        logger.info(f"  Data directories - Train: {train_dir}, Val: {val_dir}, Test: {test_dir}")
+        logger.info(f"  Batch size: {batch_size}, Validation split: {val_split}")
         
         # Default augmentation config
         augmentation_config = {
@@ -192,18 +235,15 @@ class Classifier:
             'shear_range': 20,
             'horizontal_flip': True,
         }
-        
-        # Create data generators
-        train_datagen = ImageDataGenerator(rescale=1./255, **augmentation_config)
-        val_datagen = ImageDataGenerator(rescale=1./255)
-        test_datagen = ImageDataGenerator(rescale=1./255)
+        logger.info(f"  Using augmentation config: {augmentation_config}")
         
         # Determine class_mode based on number of classes
         class_mode = 'binary' if self.num_classes == 2 else 'categorical'
+        logger.info(f"  Using class_mode: {class_mode}")
         
         # Setup generators
         if val_dir and os.path.exists(val_dir) and os.path.isdir(val_dir):
-            # Use explicit validation directory
+            logger.info("  Using explicit validation directory")
             train_datagen = ImageDataGenerator(rescale=1./255, **augmentation_config)
             val_datagen = ImageDataGenerator(rescale=1./255)
 
@@ -225,7 +265,7 @@ class Classifier:
                 seed=seed
             )
         else:
-            # Fallback: split training data into train+val
+            logger.info(f"  Splitting training data into train/val with ratio {1-val_split:.1f}/{val_split:.1f}")
             train_datagen = ImageDataGenerator(rescale=1./255, validation_split=val_split, **augmentation_config)
 
             self.train_generator = train_datagen.flow_from_directory(
@@ -248,7 +288,7 @@ class Classifier:
                 shuffle=False
             )
 
-        # Always set up test generator the same
+        # Always set up test generator
         test_datagen = ImageDataGenerator(rescale=1./255)
         self.test_generator = test_datagen.flow_from_directory(
             test_dir,
@@ -259,7 +299,7 @@ class Classifier:
             seed=seed
         )
 
-        # Update class labels
+        # Update class labels from generator
         self.class_labels = {v: k for k, v in self.train_generator.class_indices.items()}
         self.num_classes = len(self.class_labels)
         
@@ -268,25 +308,51 @@ class Classifier:
         validation_steps = ceil(self.val_generator.samples / batch_size)
         test_steps = ceil(self.test_generator.samples / batch_size)
         
-        print("Data generators setup complete:")
-        print(f"Training samples: {self.train_generator.samples}")
-        print(f"Validation samples: {self.val_generator.samples}")
-        print(f"Test samples: {self.test_generator.samples}")
+        # Check for class imbalance
+        self._check_class_imbalance()
+        
+        logger.info("Data generators setup complete:")
+        logger.info(f"  Training samples: {self.train_generator.samples} ({steps_per_epoch} steps)")
+        logger.info(f"  Validation samples: {self.val_generator.samples} ({validation_steps} steps)")
+        logger.info(f"  Test samples: {self.test_generator.samples} ({test_steps} steps)")
+        logger.info(f"  Class mapping: {self.class_labels}")
         
         return steps_per_epoch, validation_steps, test_steps
+
+    def _check_class_imbalance(self) -> None:
+        """Check for class imbalance and log warnings if found."""
+        if not self.train_generator:
+            return
+        
+        # Get class distribution
+        class_counts = {}
+        for class_idx, class_name in self.class_labels.items():
+            count = sum(1 for label in self.train_generator.classes if label == class_idx)
+            class_counts[class_name] = count
+        
+        logger.info(f"Training class distribution: {class_counts}")
+        
+        # Check for imbalance
+        counts = list(class_counts.values())
+        max_count, min_count = max(counts), min(counts)
+        imbalance_ratio = max_count / min_count if min_count > 0 else float('inf')
+        
+        if imbalance_ratio > 3:
+            logger.warning(f"Significant class imbalance detected! Ratio: {imbalance_ratio:.2f}:1")
+            logger.warning("Consider using class weights or data balancing techniques")
+        else:
+            logger.info(f"Class balance looks good. Ratio: {imbalance_ratio:.2f}:1")
 
     def build_model(self) -> bool:
         """
         Build the specified model architecture.
-        
-        Supports custom architectures (SimpleNet, OwnV1, OwnV2, AlexNet) and
-        transfer learning models (VGG16, VGG19, ResNet50, InceptionV3, etc.).
-        
-        Returns:
-            True if model was built successfully, False otherwise
         """
+        logger.info(f"Building model: {self.model_name}")
+        logger.info(f"Input shape: {self.img_shape}, Output classes: {self.num_classes}")
+        
         try:
             if self.model_name == 'OwnV1':
+                logger.info("Building custom OwnV1 architecture")
                 self.model = Sequential([
                     InputLayer(input_shape=self.img_shape, name='input_layer'),
                     
@@ -321,12 +387,14 @@ class Classifier:
                 # Add appropriate output layer
                 if self.num_classes == 2:
                     self.model.add(Dense(1, activation='sigmoid', name='output'))
+                    logger.info("Added sigmoid output layer for binary classification")
                 else:
                     self.model.add(Dense(self.num_classes, activation='softmax', name='output'))
+                    logger.info(f"Added softmax output layer for {self.num_classes}-class classification")
             
             
             elif self.model_name == 'OwnV2':
-                # More advanced architecture with residual-like connections
+                logger.info("Building custom OwnV2 architecture")
                 self.model = Sequential([
                     InputLayer(input_shape=self.img_shape, name='input_layer'),
                     
@@ -352,9 +420,9 @@ class Classifier:
                     Dropout(0.25, name='dropout3'),
 
                     # Fourth Conv Block
-                    Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_last'),
+                    Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4'),
                     BatchNormalization(name='bn4'),
-                    Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_2'),
+                    Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_2_last'),
                     MaxPooling2D((2, 2), name='pool4'),
                     Dropout(0.25, name='dropout4'),
                     
@@ -371,11 +439,14 @@ class Classifier:
                 # Add appropriate output layer
                 if self.num_classes == 2:
                     self.model.add(Dense(1, activation='sigmoid', name='output'))
+                    logger.info("Added sigmoid output layer for binary classification")
                 else:
                     self.model.add(Dense(self.num_classes, activation='softmax', name='output'))
+                    logger.info(f"Added softmax output layer for {self.num_classes}-class classification")
             
             
             elif self.model_name == 'AlexNet':
+                logger.info("Building AlexNet architecture")
                 self.model = Sequential([
                     Conv2D(96, (11,11), strides=(4,4), activation='relu', input_shape=self.img_shape),
                     MaxPooling2D((3,3), strides=(2,2)),
@@ -397,12 +468,15 @@ class Classifier:
                 
                 # Add appropriate output layer
                 if self.num_classes == 2:
-                    self.model.add(Dense(1, activation='sigmoid'))
+                    self.model.add(Dense(1, activation='sigmoid', name='output'))
+                    logger.info("Added sigmoid output layer for binary classification")
                 else:
-                    self.model.add(Dense(self.num_classes, activation='softmax'))
+                    self.model.add(Dense(self.num_classes, activation='softmax', name='output'))
+                    logger.info(f"Added softmax output layer for {self.num_classes}-class classification")
             
             # Transfer learning models
             else:
+                logger.info(f"Building transfer learning model: {self.model_name}")
                 base_models = {
                     'VGG16': tf.keras.applications.VGG16,
                     'VGG19': tf.keras.applications.VGG19,
@@ -413,12 +487,14 @@ class Classifier:
                 }
                 
                 if self.model_name in base_models:
+                    logger.info("Loading pre-trained weights from ImageNet")
                     base_model = base_models[self.model_name](
                         weights='imagenet',
                         include_top=False,
                         input_shape=self.img_shape
                     )
                     base_model.trainable = False
+                    logger.info(f"Froze base model with {len(base_model.layers)} layers")
                     
                     self.model = Sequential([
                         base_model,
@@ -430,20 +506,329 @@ class Classifier:
                     # Add appropriate output layer
                     if self.num_classes == 2:
                         self.model.add(Dense(1, activation='sigmoid'))
+                        logger.info("Added sigmoid output layer for binary classification")
                     else:
                         self.model.add(Dense(self.num_classes, activation='softmax'))
+                        logger.info(f"Added softmax output layer for {self.num_classes}-class classification")
                 else:
-                    print(f"Unknown model: {self.model_name}")
+                    logger.error(f"Unknown model: {self.model_name}")
                     return False
             
-            print(f"Model built for {'binary' if self.num_classes == 2 else 'multi-class'} classification")
+            # Count parameters
+            total_params = self.model.count_params()
+            trainable_params = sum([K.count_params(w) for w in self.model.trainable_weights])
+            logger.info("Model built successfully:")
+            logger.info(f"  Total parameters: {total_params:,}")
+            logger.info(f"  Trainable parameters: {trainable_params:,}")
+            logger.info(f"  Non-trainable parameters: {total_params - trainable_params:,}")
+            
             return True
             
         except Exception as e:
-            print(f"Error building model: {e}")
+            logger.error(f"Error building model: {e}", exc_info=True)
             return False
+
+
+    def train(self, 
+              train_dir: Optional[str] = None,
+              val_dir: Optional[str] = None,
+              test_dir: Optional[str] = None,
+              epochs: int = 50,
+              batch_size: int = 32,
+              learning_rate: float = 0.001,
+              optimizer: str = 'adam',
+              early_stopping: bool = True,
+              save_best: bool = True,
+              checkpoint_dir: str = './checkpoints',
+              verbose: int = 1) -> Dict[str, Any]:
+        """
+        Train the model with comprehensive monitoring and callbacks.
         
+        Args:
+            train_dir: Path to training data directory
+            val_dir: Path to validation data directory
+            test_dir: Path to test data directory
+            epochs: Maximum number of training epochs
+            batch_size: Batch size for training
+            learning_rate: Initial learning rate
+            optimizer: Optimizer type ('adam', 'adamw', 'sgd')
+            early_stopping: Whether to use early stopping based on validation AUC
+            save_best: Whether to save the best model during training
+            checkpoint_dir: Directory to save model checkpoints
+            verbose: Verbosity level
+            
+        Returns:
+            Dictionary containing training results and metrics
+        """
         
+        logger.info("Starting model training...")
+        logger.info("Training parameters:")
+        logger.info(f"  Epochs: {epochs}, Batch size: {batch_size}")
+        logger.info(f"  Learning rate: {learning_rate}, Optimizer: {optimizer}")
+        logger.info(f"  Early stopping: {early_stopping}, Save best: {save_best}")
+        
+        start_time = time.time()
+    
+        # Setup data generators
+        if train_dir and val_dir and test_dir:
+            steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(
+                train_dir=train_dir,
+                val_dir=val_dir,
+                test_dir=test_dir,
+                batch_size=batch_size
+            )
+        else:
+            steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(
+                batch_size=batch_size
+            )
+        
+        # Build model
+        logger.info("Building model architecture...")
+        if not self.build_model():
+            logger.error("Failed to build model")
+            return {'error': 'Failed to build model'}
+        
+        # Compile model
+        #region
+        logger.info("Compiling model...")
+        optimizers = {
+            'adam': Adam(
+                learning_rate=learning_rate, 
+                beta_1=0.9, 
+                beta_2=0.999,
+                epsilon=1e-7
+            ),
+            'adamax': Adamax(
+                learning_rate=learning_rate
+            ),
+            'adamw': AdamW(
+                learning_rate=learning_rate,
+                weight_decay=0.01
+            ),
+            'sgd': SGD(
+                learning_rate=learning_rate,
+                momentum=0.9,
+                nesterov=True
+            ),
+        }
+        
+        if self.num_classes == 2:
+            loss_function = 'binary_crossentropy'
+            metrics = [
+                'accuracy',
+                tf.keras.metrics.Precision(name='precision'),
+                tf.keras.metrics.Recall(name='recall'),
+                tf.keras.metrics.AUC(name='auc'),
+            ]
+        else:
+            loss_function = 'categorical_crossentropy'
+            metrics = [
+                'accuracy',
+                tf.keras.metrics.Precision(name='precision', average='weighted'),
+                tf.keras.metrics.Recall(name='recall', average='weighted'),
+                tf.keras.metrics.F1Score(name='f1_score', average='weighted')
+            ]
+        
+        logger.info(f"Using loss function: {loss_function}")
+        logger.info(f"Using metrics: {metrics}")
+        
+        self.model.compile(
+            optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate)),
+            loss=loss_function,
+            metrics=metrics
+        )
+        
+        if verbose > 0:
+            self.model.summary()
+        #endregion
+        
+        # Setup callbacks
+        #region
+        logger.info("Setting up training callbacks...")
+        callbacks = []
+        
+        if early_stopping:
+            callbacks.append(EarlyStopping(
+                monitor='val_accuracy',
+                patience=10,
+                restore_best_weights=True,
+                verbose=verbose,
+                mode='max'
+            ))
+            logger.info("Added EarlyStopping callback (patience=10, monitor=val_accuracy)")
+
+        
+        callbacks.append(ReduceLROnPlateau(
+            monitor='val_accuracy',
+            factor=0.5,
+            patience=5,
+            min_lr=1e-8,
+            verbose=verbose,
+            mode='max'
+        ))
+        logger.info("Added ReduceLROnPlateau callback (factor=0.5, patience=5)")
+
+        
+        if save_best:
+            os.makedirs(checkpoint_dir, exist_ok=True)
+            callbacks.append(ModelCheckpoint(
+                filepath=os.path.join(checkpoint_dir, 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'),
+                monitor='val_accuracy',
+                save_best_only=True,
+                save_weights_only=False,
+                verbose=verbose,
+                mode='max'
+            ))
+            logger.info(f"Added ModelCheckpoint callback (save to: {checkpoint_dir})")
+
+        #endregion
+        
+        # Train model
+        logger.info("Starting training loop...")
+        self.history = self.model.fit(
+            self.train_generator,
+            steps_per_epoch=steps_per_epoch,
+            epochs=epochs,
+            validation_data=self.val_generator,
+            validation_steps=validation_steps,
+            callbacks=callbacks,
+            verbose=verbose
+        )
+        
+        training_time = time.time() - start_time
+        epochs_trained = len(self.history.history['loss'])
+        logger.info(f"Training completed in {training_time:.2f} seconds ({epochs_trained} epochs)")
+        
+        # Evaluate model
+        logger.info("Evaluating model on test set...")
+        evaluation_results = self.model.evaluate(self.test_generator, verbose=0)
+        metric_names = self.model.metrics_names
+        results_dict = dict(zip(metric_names, evaluation_results))
+        
+        results = {
+            'loss': results_dict['loss'],
+            'accuracy': results_dict['accuracy'],
+            'training_time': training_time,
+            'epochs_trained': len(self.history.history['loss']),
+            'classification_type': 'binary' if self.num_classes == 2 else 'multi-class',
+            'num_classes': self.num_classes,
+            'model_name': self.model_name,
+            'img_size': self.img_size,
+            'batch_size': batch_size,
+            'optimizer': optimizer,
+            'learning_rate': learning_rate
+        }
+        
+        # Add available metrics
+        for metric in ['precision', 'recall', 'auc', 'f1_score']:
+            if metric in results_dict:
+                results[metric] = results_dict[metric]
+        
+        logger.info("Training results:")
+        logger.info(f"  Final test accuracy: {results['accuracy']:.4f}")
+        logger.info(f"  Final test loss: {results['loss']:.4f}")
+        logger.info(f"  Training time: {training_time:.2f} seconds")
+        logger.info(f"  Epochs trained: {epochs_trained}")
+        
+        return results
+    
+    def predict(self, image_path: str) -> Tuple[str, float, Dict[str, float]]:
+        """
+        Predict class for a single image.
+        
+        Args:
+            image_path: Path to the image file to classify
+            
+        Returns:
+            Tuple containing:
+                - predicted_class: Name of the predicted class
+                - confidence: Confidence score for the prediction
+                - probabilities: Dictionary with probabilities for all classes
+                
+        Raises:
+            ValueError: If model hasn't been trained or loaded
+        """
+        logger.info(f"Making prediction for image: {image_path}")
+        
+        if self.model is None:
+            logger.error("Model not trained or loaded")
+            raise ValueError("Model not trained or loaded")
+
+        # Validate image file
+        if not os.path.exists(image_path):
+            logger.error(f"Image file not found: {image_path}")
+            raise FileNotFoundError(f"Image file not found: {image_path}")
+        
+        # Load and preprocess image
+        try:
+            img = tf.keras.preprocessing.image.load_img(image_path, target_size=self.img_size)
+            img_array = tf.keras.preprocessing.image.img_to_array(img)
+            img_array = np.expand_dims(img_array, axis=0) / 255.0
+            logger.info(f"Image preprocessed to shape: {img_array.shape}")
+        except Exception as e:
+            logger.error(f"Error loading/preprocessing image: {e}")
+            raise
+
+        # Make prediction
+        raw_pred = self.model.predict(img_array, verbose=0)
+        logger.info(f"Raw prediction output: {raw_pred}")
+
+        if self.num_classes == 2:
+            # Binary classification
+            prob_class_1 = float(raw_pred[0])
+            prob_class_0 = 1.0 - prob_class_1
+            
+            predicted_idx = 1 if prob_class_1 >= 0.5 else 0
+            predicted_class = self.class_labels[predicted_idx]
+            confidence = max(prob_class_0, prob_class_1)
+
+            probabilities = {
+                self.class_labels[0]: prob_class_0,
+                self.class_labels[1]: prob_class_1
+            }
+
+        else:
+            # Multiclass classification
+            predictions = raw_pred[0]
+            predicted_idx = np.argmax(predictions)
+            
+            predicted_class = self.class_labels[predicted_idx]
+            confidence = float(predictions[predicted_idx])
+            probabilities = {self.class_labels[i]: float(prob) 
+                           for i, prob in enumerate(predictions)}
+        
+        logger.info(f"Predicted class: {predicted_class}, Confidence: {confidence:.2%}")
+        return predicted_class, confidence, probabilities
+    
+    def load_model(self, model_path: str) -> None:
+        """
+        Load a saved model from disk.
+        
+        Args:
+            model_path: Path to the saved model file
+        """
+        self.model = tf.keras.models.load_model(model_path)
+        logger.info(f"Model loaded from {model_path}")
+    
+    def save_model(self, model_path: str) -> None:
+        """
+        Save the current model to disk.
+        
+        Args:
+            model_path: Path where the model should be saved
+            
+        Raises:
+            ValueError: If no model exists to save
+        """
+        if self.model is None:
+            raise ValueError("No model to save")
+        
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        self.model.save(model_path)
+        logger.info(f"Model saved to {model_path}")
+
+
     def generate_gradcam_heatmap(self, 
                                image_path: str, 
                                conv_layer_name: Optional[str] = None, 
@@ -542,8 +927,7 @@ class Classifier:
         
         return superimposed_img, heatmap, original_img
     
-    # Hard coded layer names for OwnV1 model
-    def test_multiple_layers(self, image_path: str, alpha: float = 0.5) -> None:
+    def test_multiple_layers(self, image_path: str, alpha: float = 0.5) -> None: # Hard coded layer names for OwnV1 model
         """
         Test Grad-CAM visualization with multiple convolutional layers.
         
@@ -578,251 +962,6 @@ class Classifier:
         plt.savefig('gradcam_layers_comparison.png', dpi=300, bbox_inches='tight')
         plt.show()
     
-
-    def train(self, 
-              train_dir: Optional[str] = None,
-              val_dir: Optional[str] = None,
-              test_dir: Optional[str] = None,
-              epochs: int = 50,
-              batch_size: int = 32,
-              learning_rate: float = 0.001,
-              optimizer: str = 'adam',
-              early_stopping: bool = True,
-              save_best: bool = True,
-              checkpoint_dir: str = './checkpoints',
-              verbose: int = 1) -> Dict[str, Any]:
-        """
-        Train the model with comprehensive monitoring and callbacks.
-        
-        Args:
-            train_dir: Path to training data directory
-            val_dir: Path to validation data directory
-            test_dir: Path to test data directory
-            epochs: Maximum number of training epochs
-            batch_size: Batch size for training
-            learning_rate: Initial learning rate
-            optimizer: Optimizer type ('adam', 'adamw', 'sgd')
-            early_stopping: Whether to use early stopping based on validation AUC
-            save_best: Whether to save the best model during training
-            checkpoint_dir: Directory to save model checkpoints
-            verbose: Verbosity level
-            
-        Returns:
-            Dictionary containing training results and metrics
-        """
-        start_time = time.time()
-    
-        # Setup data generators
-        if train_dir and val_dir and test_dir:
-            steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(
-                train_dir=train_dir,
-                val_dir=val_dir,
-                test_dir=test_dir,
-                batch_size=batch_size
-            )
-        else:
-            steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(
-                batch_size=batch_size
-            )
-        
-        # Build model
-        if not self.build_model():
-            return {'error': 'Failed to build model'}
-        
-        # Compile model
-        #region
-        optimizers = {
-            'adam': Adam(
-                learning_rate=learning_rate, 
-                beta_1=0.9, 
-                beta_2=0.999,
-                epsilon=1e-7
-            ),
-            'adamw': AdamW(
-                learning_rate=learning_rate,
-                weight_decay=0.01
-            ),
-            'sgd': SGD(
-                learning_rate=learning_rate,
-                momentum=0.9,
-                nesterov=True
-            )
-        }
-        
-        # Compile model
-        
-        loss_function = 'binary_crossentropy' if self.num_classes == 2 else 'categorical_crossentropy'
-        
-        self.model.compile(
-            optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate)),
-            loss=loss_function,
-            metrics=[
-                'accuracy',
-                # tf.keras.metrics.Precision(name='precision'),
-                # tf.keras.metrics.Recall(name='recall'),
-                # tf.keras.metrics.AUC(name='auc'),
-                # tf.keras.metrics.F1Score(name='f1_score')
-            ]
-        )
-        
-        if verbose > 0:
-            self.model.summary()
-        #endregion
-        
-        # Setup callbacks
-        #region
-        callbacks = []
-        
-        if early_stopping:
-            callbacks.append(EarlyStopping(
-                monitor='val_accuracy',
-                patience=10,
-                restore_best_weights=True,
-                verbose=verbose,
-                mode='max'
-            ))
-        
-        callbacks.append(ReduceLROnPlateau(
-            monitor='val_accuracy',
-            factor=0.5,
-            patience=5,
-            min_lr=1e-8,
-            verbose=verbose,
-            mode='max'
-        ))
-        
-        if save_best:
-            os.makedirs(checkpoint_dir, exist_ok=True)
-            callbacks.append(ModelCheckpoint(
-                filepath=os.path.join(checkpoint_dir, 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'),
-                monitor='val_accuracy',
-                save_best_only=True,
-                save_weights_only=False,
-                verbose=verbose,
-                mode='max'
-            ))
-        #endregion
-        
-        # Train model
-        self.history = self.model.fit(
-            self.train_generator,
-            steps_per_epoch=steps_per_epoch,
-            epochs=epochs,
-            validation_data=self.val_generator,
-            validation_steps=validation_steps,
-            callbacks=callbacks,
-            verbose=verbose
-        )
-        
-        # Evaluate model
-        evaluation_results = self.model.evaluate(self.test_generator, verbose=0)
-        metric_names = self.model.metrics_names  # ['loss', 'accuracy', 'precision', 'recall', 'auc', 'f1_score']
-        results_dict = dict(zip(metric_names, evaluation_results))
-        training_time = time.time() - start_time
-        
-        results = {
-            'loss': results_dict['loss'],
-            'accuracy': results_dict['accuracy'],
-            'training_time': training_time,
-            'epochs_trained': len(self.history.history['loss']),
-            # 'precision': results_dict['precision'],
-            # 'recall': results_dict['recall'],
-            # 'auc': results_dict['auc'],
-            # 'f1_score': results_dict['f1_score'],
-            'classification_type': 'binary' if self.num_classes == 2 else 'multi-class',
-            'num_classes': self.num_classes
-        }
-        
-        if verbose > 0:
-            print("\nTraining completed!")
-            print(f"Final accuracy: {results['accuracy']:.4f}")
-            # print(f"Final AUC: {results['auc']:.4f}")
-            print(f"Training time: {training_time:.2f} seconds")
-        
-        return results
-    
-    def predict(self, image_path: str) -> Tuple[str, float, Dict[str, float]]:
-        """
-        Predict class for a single image.
-        
-        Args:
-            image_path: Path to the image file to classify
-            
-        Returns:
-            Tuple containing:
-                - predicted_class: Name of the predicted class
-                - confidence: Confidence score for the prediction
-                - probabilities: Dictionary with probabilities for all classes
-                
-        Raises:
-            ValueError: If model hasn't been trained or loaded
-        """
-        if self.model is None:
-            raise ValueError("Model not trained or loaded")
-
-        # Load and preprocess image
-        img = tf.keras.preprocessing.image.load_img(image_path, target_size=self.img_size)
-        img_array = tf.keras.preprocessing.image.img_to_array(img)
-        img_array = np.expand_dims(img_array, axis=0) / 255.0
-
-        # Make prediction
-        raw_pred = self.model.predict(img_array, verbose=0)
-
-        if self.num_classes == 2:
-            # Binary classification
-            prob_class_1 = float(raw_pred[0])
-            prob_class_0 = 1.0 - prob_class_1
-            
-            predicted_idx = 1 if prob_class_1 >= 0.5 else 0
-            predicted_class = self.class_labels[predicted_idx]
-            confidence = max(prob_class_0, prob_class_1)
-
-            probabilities = {
-                self.class_labels[0]: prob_class_0,
-                self.class_labels[1]: prob_class_1
-            }
-
-        else:
-            # Multiclass classification
-            predictions = raw_pred[0]
-            predicted_idx = np.argmax(predictions)
-            
-            predicted_class = self.class_labels[predicted_idx]
-            confidence = float(predictions[predicted_idx])
-            probabilities = {self.class_labels[i]: float(prob) 
-                           for i, prob in enumerate(predictions)}
-
-        return predicted_class, confidence, probabilities
-    
-    def load_model(self, model_path: str) -> None:
-        """
-        Load a saved model from disk.
-        
-        Args:
-            model_path: Path to the saved model file
-        """
-        self.model = tf.keras.models.load_model(model_path)
-        print(f"Model loaded from {model_path}")
-    
-    def save_model(self, model_path: str) -> None:
-        """
-        Save the current model to disk.
-        
-        Args:
-            model_path: Path where the model should be saved
-            
-        Raises:
-            ValueError: If no model exists to save
-        """
-        if self.model is None:
-            raise ValueError("No model to save")
-        
-        # Create directory if it doesn't exist
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        self.model.save(model_path)
-        print(f"Model saved to {model_path}")
-
-
 
     def plot_confusion_matrix(self, normalize: bool = False, save_path: Optional[str] = None):
         if self.model is None or self.test_generator is None:
@@ -926,6 +1065,11 @@ class Classifier:
 
 
 if __name__ == "__main__":
+    # AVAILABLE_MODELS = [
+    #     'OwnV2', 'OwnV1', 'SimpleNet', 'VGG16', 'VGG19', 'AlexNet', 
+    #     'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2'
+    # ]
+    
     # data_dir = 'data_bone_frac/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification'
     data_dir = 'data_pneumonia_final_balanced'
     # data_dir = 'data_mura/data_mura_dir'
@@ -940,7 +1084,7 @@ if __name__ == "__main__":
     
     # Train the model
     results = classifier.train(
-        epochs=30,
+        epochs=1,
         batch_size=32,
         learning_rate=0.001,
     )
@@ -950,7 +1094,7 @@ if __name__ == "__main__":
     
     image_to_test = 'data_pneumonia/train/PNEUMONIA/person1657_bacteria_4399.jpeg'
     predicted_class, confidence, _ = classifier.predict(image_to_test)
-    print(f"Prediction for '{image_to_test}': {predicted_class} with {confidence:.2%} confidence.")
+    # print(f"Prediction for '{image_to_test}': {predicted_class} with {confidence:.2%} confidence.")
     
     # heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
     classifier.test_multiple_layers(image_to_test)
