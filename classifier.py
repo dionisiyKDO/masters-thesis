@@ -959,7 +959,7 @@ class Classifier:
                 axes[i].set_title(f'Layer: {layer_name} (Error)')
         
         plt.tight_layout()
-        plt.savefig('gradcam_layers_comparison.png', dpi=300, bbox_inches='tight')
+        plt.savefig('./results/gradcam_layers_comparison.png', dpi=300, bbox_inches='tight')
         plt.show()
     
 
@@ -989,7 +989,7 @@ class Classifier:
         plt.xlabel('Predicted Label')
         plt.tight_layout()
         
-        save_path = save_path or f'confusion_matrix_{int(time.time())}.png'
+        save_path = save_path or f'./results/confusion_matrix_{int(time.time())}.png'
         plt.savefig(save_path)
         plt.close()
 
@@ -1019,7 +1019,7 @@ class Classifier:
         ax2.grid(True)
 
         plt.tight_layout()
-        save_path = save_path or f'training_history_{int(time.time())}.png'
+        save_path = save_path or f'./results/training_history_{int(time.time())}.png'
         plt.savefig(save_path)
         plt.close()
     
