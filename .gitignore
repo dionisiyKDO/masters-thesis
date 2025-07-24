@@ -19,6 +19,8 @@ archive.zip
 
 test.py
 
+classifier.log
+
 # Python-generated files
 __pycache__/
 *.py[oc]
