@@ -2,6 +2,9 @@ checkpoints/
 flattened/
 flattened-limited/
 data/
+data_bone_frac/
+data_mura/
+data_alzheimer/
 .vscode/
 
 fig.png

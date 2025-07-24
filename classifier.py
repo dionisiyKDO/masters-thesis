@@ -1,5 +1,6 @@
 import os
 import time
+import warnings
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -8,30 +9,25 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple, Any
 
 import cv2
-from PIL import Image
+from PIL import Image, ImageFile
 import seaborn as sns
 import matplotlib.pyplot as plt
 import plotly.express as px
 import plotly.graph_objects as go
 
 from sklearn.metrics import confusion_matrix, classification_report
+
+import tensorflow.keras.backend as K
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.optimizers import Adam, Adamax, SGD, AdamW
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import (
     Conv2D, MaxPooling2D, Flatten, Dense, Dropout, InputLayer,
     BatchNormalization, GlobalAveragePooling2D
 )
 
-
-import tensorflow.keras.backend as K
-from tensorflow.keras.models import Model
-
-from PIL import ImageFile
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-
-import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 
@@ -62,7 +58,7 @@ class Classifier:
         """
         
         if model_name not in self.AVAILABLE_MODELS:
-                    raise ValueError(f"Model '{model_name}' not supported. Available models: {self.AVAILABLE_MODELS}")
+            raise ValueError(f"Model '{model_name}' not supported. Available models: {self.AVAILABLE_MODELS}")
         
         
         self.model_name = model_name
@@ -162,11 +158,12 @@ class Classifier:
         )
     
     def setup_data_generators(self,
-                            train_dir: str,
-                            val_dir: str,
-                            test_dir: str,
+                            train_dir: Optional[str] = None,
+                            val_dir: Optional[str] = None,
+                            test_dir: Optional[str] = None,
                             batch_size: int = 16,
-                            seed: int = 42) -> Tuple[int, int, int]:
+                            seed: int = 42,
+                            val_split: float = 0.2) -> Tuple[int, int, int]:
         """
         Setup data generators for training, validation, and testing with augmentation.
         
@@ -176,17 +173,23 @@ class Classifier:
             test_dir: Path to test data directory
             batch_size: Batch size for data loading
             seed: Random seed for reproducibility
+            val_split: Fraction of training data to reserve for validation (if val_dir is missing)
             
         Returns:
             Tuple containing (steps_per_epoch, validation_steps, test_steps)
         """
+        # Use auto-detected directories if not provided
+        train_dir = train_dir or self.train_dir
+        val_dir = val_dir or self.val_dir
+        test_dir = test_dir or self.test_dir
+        
         # Default augmentation config
         augmentation_config = {
-            'rotation_range': 10,
-            'brightness_range': (0.9, 1.1),
-            'width_shift_range': 0.005,
-            'height_shift_range': 0.005,
-            'shear_range': 10,
+            'rotation_range': 20,
+            'brightness_range': (0.8, 1.2),
+            'width_shift_range': 0.015,
+            'height_shift_range': 0.015,
+            'shear_range': 20,
             'horizontal_flip': True,
         }
         
@@ -199,24 +202,54 @@ class Classifier:
         class_mode = 'binary' if self.num_classes == 2 else 'categorical'
         
         # Setup generators
-        self.train_generator = train_datagen.flow_from_directory(
-            train_dir,
-            target_size=self.img_size,
-            batch_size=batch_size,
-            class_mode=class_mode,
-            seed=seed,
-            shuffle=True
-        )
-        
-        self.val_generator = val_datagen.flow_from_directory(
-            val_dir,
-            target_size=self.img_size,
-            batch_size=batch_size,
-            class_mode=class_mode,
-            shuffle=False,
-            seed=seed
-        )
-        
+        if val_dir and os.path.exists(val_dir) and os.path.isdir(val_dir):
+            # Use explicit validation directory
+            train_datagen = ImageDataGenerator(rescale=1./255, **augmentation_config)
+            val_datagen = ImageDataGenerator(rescale=1./255)
+
+            self.train_generator = train_datagen.flow_from_directory(
+                train_dir,
+                target_size=self.img_size,
+                batch_size=batch_size,
+                class_mode=class_mode,
+                seed=seed,
+                shuffle=True
+            )
+
+            self.val_generator = val_datagen.flow_from_directory(
+                val_dir,
+                target_size=self.img_size,
+                batch_size=batch_size,
+                class_mode=class_mode,
+                shuffle=False,
+                seed=seed
+            )
+        else:
+            # Fallback: split training data into train+val
+            train_datagen = ImageDataGenerator(rescale=1./255, validation_split=val_split, **augmentation_config)
+
+            self.train_generator = train_datagen.flow_from_directory(
+                train_dir,
+                target_size=self.img_size,
+                batch_size=batch_size,
+                class_mode=class_mode,
+                subset='training',
+                seed=seed,
+                shuffle=True
+            )
+
+            self.val_generator = train_datagen.flow_from_directory(
+                train_dir,
+                target_size=self.img_size,
+                batch_size=batch_size,
+                class_mode=class_mode,
+                subset='validation',
+                seed=seed,
+                shuffle=False
+            )
+
+        # Always set up test generator the same
+        test_datagen = ImageDataGenerator(rescale=1./255)
         self.test_generator = test_datagen.flow_from_directory(
             test_dir,
             target_size=self.img_size,
@@ -225,8 +258,8 @@ class Classifier:
             shuffle=False,
             seed=seed
         )
-        
-        # Update class labels from generator
+
+        # Update class labels
         self.class_labels = {v: k for k, v in self.train_generator.class_indices.items()}
         self.num_classes = len(self.class_labels)
         
@@ -234,6 +267,11 @@ class Classifier:
         steps_per_epoch = ceil(self.train_generator.samples / batch_size)
         validation_steps = ceil(self.val_generator.samples / batch_size)
         test_steps = ceil(self.test_generator.samples / batch_size)
+        
+        print("Data generators setup complete:")
+        print(f"Training samples: {self.train_generator.samples}")
+        print(f"Validation samples: {self.val_generator.samples}")
+        print(f"Test samples: {self.test_generator.samples}")
         
         return steps_per_epoch, validation_steps, test_steps
 
@@ -278,11 +316,64 @@ class Classifier:
                     # Dense layers
                     Dense(256, activation='relu', name='dense1'),
                     Dropout(0.5, name='dropout1'),
-                    
-                    # Output Layer
-                    # Dense(self.num_classes, activation='softmax', name='output')
-                    Dense(1, activation='sigmoid', name='output')
                 ])
+                
+                # Add appropriate output layer
+                if self.num_classes == 2:
+                    self.model.add(Dense(1, activation='sigmoid', name='output'))
+                else:
+                    self.model.add(Dense(self.num_classes, activation='softmax', name='output'))
+            
+            
+            elif self.model_name == 'OwnV2':
+                # More advanced architecture with residual-like connections
+                self.model = Sequential([
+                    InputLayer(input_shape=self.img_shape, name='input_layer'),
+                    
+                    # First Conv Block
+                    Conv2D(64, (3, 3), activation='relu', padding='same', name='conv1'),
+                    BatchNormalization(name='bn1'),
+                    Conv2D(64, (3, 3), activation='relu', padding='same', name='conv1_2'),
+                    MaxPooling2D((2, 2), name='pool1'),
+                    Dropout(0.25, name='dropout1'),
+                    
+                    # Second Conv Block
+                    Conv2D(128, (3, 3), activation='relu', padding='same', name='conv2'),
+                    BatchNormalization(name='bn2'),
+                    Conv2D(128, (3, 3), activation='relu', padding='same', name='conv2_2'),
+                    MaxPooling2D((2, 2), name='pool2'),
+                    Dropout(0.25, name='dropout2'),
+                    
+                    # Third Conv Block
+                    Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3'),
+                    BatchNormalization(name='bn3'),
+                    Conv2D(256, (3, 3), activation='relu', padding='same', name='conv3_2'),
+                    MaxPooling2D((2, 2), name='pool3'),
+                    Dropout(0.25, name='dropout3'),
+
+                    # Fourth Conv Block
+                    Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_last'),
+                    BatchNormalization(name='bn4'),
+                    Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_2'),
+                    MaxPooling2D((2, 2), name='pool4'),
+                    Dropout(0.25, name='dropout4'),
+                    
+                    # Global Average Pooling
+                    GlobalAveragePooling2D(name='global_avg_pool'),
+                    
+                    # Dense layers
+                    Dense(512, activation='relu', name='dense1'),
+                    Dropout(0.5, name='dropout_dense1'),
+                    Dense(256, activation='relu', name='dense2'),
+                    Dropout(0.5, name='dropout_dense2'),
+                ])
+                
+                # Add appropriate output layer
+                if self.num_classes == 2:
+                    self.model.add(Dense(1, activation='sigmoid', name='output'))
+                else:
+                    self.model.add(Dense(self.num_classes, activation='softmax', name='output'))
+            
             
             elif self.model_name == 'AlexNet':
                 self.model = Sequential([
@@ -302,9 +393,13 @@ class Classifier:
                     Dropout(0.5),
                     Dense(4096, activation='relu'),
                     Dropout(0.5),
-                    # Dense(self.num_classes, activation='softmax')
-                    Dense(1, activation='sigmoid')
                 ])
+                
+                # Add appropriate output layer
+                if self.num_classes == 2:
+                    self.model.add(Dense(1, activation='sigmoid'))
+                else:
+                    self.model.add(Dense(self.num_classes, activation='softmax'))
             
             # Transfer learning models
             else:
@@ -330,13 +425,18 @@ class Classifier:
                         GlobalAveragePooling2D(),
                         Dense(128, activation='relu'),
                         Dropout(0.5),
-                        # Dense(self.num_classes, activation='softmax')
-                        Dense(1, activation='sigmoid')
                     ])
+                    
+                    # Add appropriate output layer
+                    if self.num_classes == 2:
+                        self.model.add(Dense(1, activation='sigmoid'))
+                    else:
+                        self.model.add(Dense(self.num_classes, activation='softmax'))
                 else:
                     print(f"Unknown model: {self.model_name}")
                     return False
             
+            print(f"Model built for {'binary' if self.num_classes == 2 else 'multi-class'} classification")
             return True
             
         except Exception as e:
@@ -397,14 +497,16 @@ class Classifier:
         # Compute gradients
         with tf.GradientTape() as tape:
             conv_outputs, predictions = grad_model(img_array)
-            # For binary classification with sigmoid activation
-            predicted_class = tf.cast(predictions[0][0] > 0.5, tf.float32)
+            if self.num_classes == 2:
+                # Binary classification with sigmoid
+                # predicted_class = tf.cast(predictions[0][0] > 0.5, tf.float32)
+                # loss = predicted_class * predictions[0][0] + (1 - predicted_class) * (1 - predictions[0][0])
+                loss = predictions[0][0]
+            else:
+                # Multi-class classification with softmax
+                predicted_class_idx = tf.argmax(predictions[0])
+                loss = predictions[0][predicted_class_idx]
             
-            # loss computations
-            loss = predictions[0][0] # show only fractured heatmap
-            # loss = predicted_class * predictions[0][0] + (1 - predicted_class) * (1 - predictions[0][0]) # show whatever is predicted
-            # loss = predictions[0][0] if predictions[0][0] > 0.5 else (1 - predictions[0][0]) # show whatever is predicted
-
         # Calculate gradients of loss with respect to conv layer output
         grads = tape.gradient(loss, conv_outputs)
 
@@ -478,9 +580,9 @@ class Classifier:
     
 
     def train(self, 
-              train_dir: str,
-              val_dir: str,
-              test_dir: str,
+              train_dir: Optional[str] = None,
+              val_dir: Optional[str] = None,
+              test_dir: Optional[str] = None,
               epochs: int = 50,
               batch_size: int = 32,
               learning_rate: float = 0.001,
@@ -511,17 +613,21 @@ class Classifier:
         start_time = time.time()
     
         # Setup data generators
-        steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(
-            train_dir=train_dir,
-            val_dir=val_dir,
-            test_dir=test_dir,
-            batch_size=batch_size
-        )
+        if train_dir and val_dir and test_dir:
+            steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(
+                train_dir=train_dir,
+                val_dir=val_dir,
+                test_dir=test_dir,
+                batch_size=batch_size
+            )
+        else:
+            steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(
+                batch_size=batch_size
+            )
         
         # Build model
         if not self.build_model():
             return {'error': 'Failed to build model'}
-        
         
         # Compile model
         #region
@@ -544,15 +650,18 @@ class Classifier:
         }
         
         # Compile model
+        
+        loss_function = 'binary_crossentropy' if self.num_classes == 2 else 'categorical_crossentropy'
+        
         self.model.compile(
             optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate)),
-            loss='binary_crossentropy',
+            loss=loss_function,
             metrics=[
                 'accuracy',
-                tf.keras.metrics.Precision(name='precision'),
-                tf.keras.metrics.Recall(name='recall'),
-                tf.keras.metrics.AUC(name='auc'),
-                tf.keras.metrics.F1Score(name='f1_score')
+                # tf.keras.metrics.Precision(name='precision'),
+                # tf.keras.metrics.Recall(name='recall'),
+                # tf.keras.metrics.AUC(name='auc'),
+                # tf.keras.metrics.F1Score(name='f1_score')
             ]
         )
         
@@ -566,7 +675,7 @@ class Classifier:
         
         if early_stopping:
             callbacks.append(EarlyStopping(
-                monitor='val_auc',
+                monitor='val_accuracy',
                 patience=10,
                 restore_best_weights=True,
                 verbose=verbose,
@@ -574,7 +683,7 @@ class Classifier:
             ))
         
         callbacks.append(ReduceLROnPlateau(
-            monitor='val_auc',
+            monitor='val_accuracy',
             factor=0.5,
             patience=5,
             min_lr=1e-8,
@@ -586,7 +695,7 @@ class Classifier:
             os.makedirs(checkpoint_dir, exist_ok=True)
             callbacks.append(ModelCheckpoint(
                 filepath=os.path.join(checkpoint_dir, 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'),
-                monitor='val_auc',
+                monitor='val_accuracy',
                 save_best_only=True,
                 save_weights_only=False,
                 verbose=verbose,
@@ -616,16 +725,18 @@ class Classifier:
             'accuracy': results_dict['accuracy'],
             'training_time': training_time,
             'epochs_trained': len(self.history.history['loss']),
-            'precision': results_dict['precision'],
-            'recall': results_dict['recall'],
-            'auc': results_dict['auc'],
-            'f1_score': results_dict['f1_score'],
+            # 'precision': results_dict['precision'],
+            # 'recall': results_dict['recall'],
+            # 'auc': results_dict['auc'],
+            # 'f1_score': results_dict['f1_score'],
+            'classification_type': 'binary' if self.num_classes == 2 else 'multi-class',
+            'num_classes': self.num_classes
         }
         
         if verbose > 0:
             print("\nTraining completed!")
             print(f"Final accuracy: {results['accuracy']:.4f}")
-            print(f"Final AUC: {results['auc']:.4f}")
+            # print(f"Final AUC: {results['auc']:.4f}")
             print(f"Training time: {training_time:.2f} seconds")
         
         return results
@@ -815,31 +926,29 @@ class Classifier:
 
 
 if __name__ == "__main__":
-    train_dir = './data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/train'
-    val_dir = './data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/val'
-    test_dir = './data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/test'
+    # data_dir = 'data_bone_frac/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification'
+    data_dir = 'data_pneumonia_final_balanced'
+    # data_dir = 'data_mura/data_mura_dir'
+    # data_dir = 'data_alzheimer/data_split'
     
     classifier = Classifier(
-        model_name='OwnV1',
+        model_name='VGG19',  # 'OwnV1', 'AlexNet', 'ResNet50', 'InceptionV3', etc.
         img_size=(150, 150),
-        data_dir=test_dir
+        # img_size=(224, 224),
+        data_dir=data_dir
     )
     
     # Train the model
-    # results = classifier.train(
-    #     train_dir=train_dir,
-    #     val_dir=val_dir,
-    #     test_dir=test_dir,
-    #     epochs=3,
-    #     batch_size=32,
-    #     learning_rate=0.001,
-    #     verbose=0
-    # )
+    results = classifier.train(
+        epochs=30,
+        batch_size=32,
+        learning_rate=0.001,
+    )
     
     # Load the model
-    classifier.load_model('checkpoints/model.epoch19-val_acc0.9940.hdf5')
+    # classifier.load_model('checkpoints/model.epoch20-val_acc0.8750.hdf5')
     
-    image_to_test = 'data/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification/val/fractured/54d38979da5d67c85b1df0919c12d4_jumbo.jpeg'
+    image_to_test = 'data_pneumonia/train/PNEUMONIA/person1657_bacteria_4399.jpeg'
     predicted_class, confidence, _ = classifier.predict(image_to_test)
     print(f"Prediction for '{image_to_test}': {predicted_class} with {confidence:.2%} confidence.")
     
