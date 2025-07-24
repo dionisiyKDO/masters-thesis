@@ -5,6 +5,10 @@ data/
 data_bone_frac/
 data_mura/
 data_alzheimer/
+data_pneumonia/
+data_pneumonia_augmented_flat/
+data_pneumonia_final_balanced/
+results/
 .vscode/
 
 fig.png
