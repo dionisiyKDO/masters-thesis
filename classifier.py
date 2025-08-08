@@ -22,10 +22,12 @@ import tensorflow.keras.backend as K
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.optimizers import Adam, Adamax, SGD, AdamW
+from tensorflow.keras.optimizers.schedules import CosineDecay
 from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.layers import (
     Conv2D, MaxPooling2D, Flatten, Dense, Dropout, InputLayer,
-    BatchNormalization, GlobalAveragePooling2D
+    BatchNormalization, GlobalAveragePooling2D,
+    Input, ReLU, LeakyReLU, Add
 )
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -46,7 +48,7 @@ logger = logging.getLogger(__name__)
 class Classifier:
     
     AVAILABLE_MODELS = [
-        'OwnV2', 'OwnV1', 'SimpleNet', 'VGG16', 'VGG19', 'AlexNet', 
+        'OwnV3', 'OwnV2', 'OwnV1', 'SimpleNet', 'VGG16', 'VGG19', 'AlexNet', 
         'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2'
     ]
     
@@ -343,6 +345,70 @@ class Classifier:
         else:
             logger.info(f"Class balance looks good. Ratio: {imbalance_ratio:.2f}:1")
 
+
+    def create_pneumo_resnet(self, input_shape=(224, 224, 3), num_classes=2):
+        """
+        Builds a custom ResNet-style architecture for pneumonia classification.
+        """
+        
+        def residual_block(x, filters, kernel_size=(3, 3), stride=1):
+            """A single residual block."""
+            # Main path
+            y = Conv2D(filters, kernel_size, strides=stride, padding='same', kernel_regularizer='l2')(x)
+            y = BatchNormalization()(y)
+            y = LeakyReLU(alpha=0.01)(y)
+            
+            y = Conv2D(filters, kernel_size, padding='same', kernel_regularizer='l2')(y)
+            y = BatchNormalization()(y)
+            
+            # Shortcut connection
+            # If strides > 1 or filter count changes, we need to project the shortcut.
+            if stride != 1 or x.shape[-1] != filters:
+                shortcut = Conv2D(filters, (1, 1), strides=stride, padding='same')(x)
+            else:
+                shortcut = x
+                
+            # Add shortcut to the main path
+            out = Add()([y, shortcut])
+            out = LeakyReLU(alpha=0.01)(out)
+            return out
+
+        # Input Layer
+        inputs = Input(shape=input_shape)
+        
+        # Initial Conv Stem
+        # A larger initial kernel to capture broader features from the start
+        x = Conv2D(32, (7, 7), strides=2, padding='same')(inputs)
+        x = BatchNormalization()(x)
+        x = LeakyReLU(alpha=0.01)(x)
+        x = MaxPooling2D((3, 3), strides=2, padding='same')(x)
+        
+        # --- Residual Blocks ---
+        
+        # Block 1 - Use 32 filters
+        x = residual_block(x, filters=32)
+        # Block 2 - Use 64 filters
+        x = residual_block(x, filters=64, stride=2) 
+        # Block 3 - Use 128 filters
+        x = residual_block(x, filters=128, stride=2)
+        # Block 4 - Use 256 filters
+        x = residual_block(x, filters=256, stride=2)
+        
+        # --- Classifier Head ---
+        x = GlobalAveragePooling2D()(x)
+        
+        x = Dense(128, activation='relu')(x)
+        x = Dropout(0.6)(x)
+        
+        # Output Layer
+        if num_classes == 2:
+            outputs = Dense(1, activation='sigmoid', name='output')(x)
+        else:
+            outputs = Dense(num_classes, activation='softmax', name='output')(x)
+            
+        model = Model(inputs=inputs, outputs=outputs, name='PneumoResNet')
+        return model
+
     def build_model(self) -> bool:
         """
         Build the specified model architecture.
@@ -392,7 +458,6 @@ class Classifier:
                     self.model.add(Dense(self.num_classes, activation='softmax', name='output'))
                     logger.info(f"Added softmax output layer for {self.num_classes}-class classification")
             
-            
             elif self.model_name == 'OwnV2':
                 logger.info("Building custom OwnV2 architecture")
                 self.model = Sequential([
@@ -422,7 +487,7 @@ class Classifier:
                     # Fourth Conv Block
                     Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4'),
                     BatchNormalization(name='bn4'),
-                    Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_2_last'),
+                    Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_last'),
                     MaxPooling2D((2, 2), name='pool4'),
                     Dropout(0.25, name='dropout4'),
                     
@@ -431,9 +496,9 @@ class Classifier:
                     
                     # Dense layers
                     Dense(512, activation='relu', name='dense1'),
-                    Dropout(0.5, name='dropout_dense1'),
+                    Dropout(0.3, name='dropout_dense1'),
                     Dense(256, activation='relu', name='dense2'),
-                    Dropout(0.5, name='dropout_dense2'),
+                    Dropout(0.3, name='dropout_dense2'),
                 ])
                 
                 # Add appropriate output layer
@@ -443,6 +508,10 @@ class Classifier:
                 else:
                     self.model.add(Dense(self.num_classes, activation='softmax', name='output'))
                     logger.info(f"Added softmax output layer for {self.num_classes}-class classification")
+            
+            elif self.model_name == 'OwnV3':
+                logger.info("Building custom PneumoResNet architecture")
+                self.model = self.create_pneumo_resnet(input_shape=self.img_shape, num_classes=self.num_classes)
             
             
             elif self.model_name == 'AlexNet':
@@ -591,6 +660,11 @@ class Classifier:
         # Compile model
         #region
         logger.info("Compiling model...")
+        total_steps = steps_per_epoch * epochs 
+        cosine_decay_schedule = CosineDecay(
+            initial_learning_rate=learning_rate, # Start with a higher LR, e.g., 0.01
+            decay_steps=total_steps
+        )
         optimizers = {
             'adam': Adam(
                 learning_rate=learning_rate, 
@@ -606,7 +680,7 @@ class Classifier:
                 weight_decay=0.01
             ),
             'sgd': SGD(
-                learning_rate=learning_rate,
+                learning_rate=cosine_decay_schedule,
                 momentum=0.9,
                 nesterov=True
             ),
@@ -799,6 +873,39 @@ class Classifier:
         
         logger.info(f"Predicted class: {predicted_class}, Confidence: {confidence:.2%}")
         return predicted_class, confidence, probabilities
+    
+    def evaluate(self):
+        # Evaluate model
+        
+        if self.val_generator is None:
+            logger.warning("val_generator is None — preparing data...")
+            self.setup_data_generators()
+        
+        logger.info("Evaluating model on test set...")
+        evaluation_results = self.model.evaluate(self.val_generator, verbose=0)
+        metric_names = self.model.metrics_names
+        results_dict = dict(zip(metric_names, evaluation_results))
+        
+        results = {
+            'loss': results_dict['loss'],
+            'accuracy': results_dict['accuracy'],
+            'classification_type': 'binary' if self.num_classes == 2 else 'multi-class',
+            'num_classes': self.num_classes,
+            'model_name': self.model_name,
+        }
+        
+        # Add available metrics
+        for metric in ['precision', 'recall', 'auc', 'f1_score']:
+            if metric in results_dict:
+                results[metric] = results_dict[metric]
+        
+        logger.info("Training results:")
+        logger.info(f"  Final test accuracy: {results['accuracy']:.4f}")
+        logger.info(f"  Final test loss: {results['loss']:.4f}")
+        
+        return results
+        
+        
     
     def load_model(self, model_path: str) -> None:
         """
@@ -1066,17 +1173,17 @@ class Classifier:
 
 if __name__ == "__main__":
     # AVAILABLE_MODELS = [
-    #     'OwnV2', 'OwnV1', 'SimpleNet', 'VGG16', 'VGG19', 'AlexNet', 
+    #     'OwnV2', 'OwnV1', 'VGG16', 'VGG19', 'AlexNet', 
     #     'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2'
     # ]
     
     # data_dir = 'data_bone_frac/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification'
-    data_dir = 'data_pneumonia_final_balanced'
+    data_dir = 'data_pneumonia_final_balanced_og'
     # data_dir = 'data_mura/data_mura_dir'
     # data_dir = 'data_alzheimer/data_split'
     
     classifier = Classifier(
-        model_name='VGG19',  # 'OwnV1', 'AlexNet', 'ResNet50', 'InceptionV3', etc.
+        model_name='OwnV3',
         img_size=(150, 150),
         # img_size=(224, 224),
         data_dir=data_dir
@@ -1084,19 +1191,22 @@ if __name__ == "__main__":
     
     # Train the model
     results = classifier.train(
-        epochs=1,
-        batch_size=32,
-        learning_rate=0.001,
+        epochs=100,
+        batch_size=16,
+        # learning_rate=0.0003,
+        
+        learning_rate=0.01,
+        optimizer='sgd',
     )
     
     # Load the model
-    # classifier.load_model('checkpoints/model.epoch20-val_acc0.8750.hdf5')
+    # classifier.load_model('checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5')
+    classifier.evaluate()
     
     image_to_test = 'data_pneumonia/train/PNEUMONIA/person1657_bacteria_4399.jpeg'
     predicted_class, confidence, _ = classifier.predict(image_to_test)
-    # print(f"Prediction for '{image_to_test}': {predicted_class} with {confidence:.2%} confidence.")
     
-    # heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
+    heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
     classifier.test_multiple_layers(image_to_test)
     classifier.plot_training_history()
     classifier.plot_confusion_matrix()
