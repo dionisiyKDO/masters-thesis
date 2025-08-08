@@ -8,6 +8,9 @@ data_alzheimer/
 data_pneumonia/
 data_pneumonia_augmented_flat/
 data_pneumonia_final_balanced/
+data_pneumonia_final_balanced_og/
+data_pneumonia_final_balanced_test/
+data_pneumonia_final_balanced (Copy)/
 results/
 .vscode/
 
