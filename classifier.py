@@ -724,7 +724,7 @@ class Classifier:
         if early_stopping:
             callbacks.append(EarlyStopping(
                 monitor='val_accuracy',
-                patience=10,
+                patience=12,
                 restore_best_weights=True,
                 verbose=verbose,
                 mode='max'
@@ -1193,14 +1193,14 @@ if __name__ == "__main__":
     results = classifier.train(
         epochs=100,
         batch_size=16,
-        # learning_rate=0.0003,
+        learning_rate=0.0003,
         
-        learning_rate=0.01,
-        optimizer='sgd',
+        # learning_rate=0.01,
+        # optimizer='sgd',
     )
     
     # Load the model
-    # classifier.load_model('checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5')
+    # classifier.load_model('checkpoints/Saved/OwnV3.epoch30-val_acc0.9818.hdf5')
     classifier.evaluate()
     
     image_to_test = 'data_pneumonia/train/PNEUMONIA/person1657_bacteria_4399.jpeg'
