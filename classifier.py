@@ -908,8 +908,7 @@ class Classifier:
             "true_indices": labels,                    # (n_samples,)
             "class_labels": class_labels
         }
-        
-        
+    
     
     def load_model(self, model_path: str) -> None:
         """
@@ -1182,7 +1181,6 @@ def evaluate_ensemble(models_info, data_dir, img_size=(150, 150), weights=None):
     """
     all_probs = []
     true_labels = None
-    class_labels = None
 
     for name, ckpt in models_info.items():
         clf = Classifier(model_name=name, img_size=img_size, data_dir=data_dir)
@@ -1192,7 +1190,6 @@ def evaluate_ensemble(models_info, data_dir, img_size=(150, 150), weights=None):
         all_probs.append(res["probs"])
         if true_labels is None:
             true_labels = res["true_indices"]
-            class_labels = res["class_labels"]
 
     if weights is None:
         # Default to equal weights if none are provided
@@ -1207,8 +1204,9 @@ def evaluate_ensemble(models_info, data_dir, img_size=(150, 150), weights=None):
 
     return accuracy
 
-
-if __name__ == "__main__":
+def ensemble_testing():
+    data_dir = 'data_pneumonia_final_balanced_og'
+    
     checkpoint_paths = {
         "OwnV3": "checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5",
         # "OwnV1": "checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
@@ -1217,10 +1215,6 @@ if __name__ == "__main__":
         # "OwnV2": "checkpoints/Saved/OwnV2.epoch28-val_acc0.9705.hdf5",
         "InceptionV3": "checkpoints/Saved/InceptionV3.epoch13-val_acc0.9545.hdf5",
     }
-    # data_dir = 'data_bone_frac/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification'
-    data_dir = 'data_pneumonia_final_balanced_og'
-    # data_dir = 'data_mura/data_mura_dir'
-    # data_dir = 'data_alzheimer/data_split'
     
 
     # ensemble_predict_from_checkpoints(checkpoint_paths)
@@ -1233,20 +1227,11 @@ if __name__ == "__main__":
         0.9545,
     ] 
     acc = evaluate_ensemble(checkpoint_paths, data_dir, (150, 150), weights=weights)
-    print(acc)
-    exit()
-    
-    
-    
-    
-    
-    
-    
-    # AVAILABLE_MODELS = [
-    #     'OwnV2', 'OwnV1', 'VGG16', 'VGG19', 'AlexNet', 
+
+def train_testing():
+    data_dir = 'data_pneumonia_final_balanced_og'
+    #     'OwnV3', 'OwnV2', 'OwnV1', 'VGG16', 'VGG19', 'AlexNet', 
     #     'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2'
-    # ]
-    
     
     classifier = Classifier(
         model_name='OwnV3',
@@ -1255,28 +1240,31 @@ if __name__ == "__main__":
         data_dir=data_dir
     )
     
+    
+    
     # Train the model
-    # results = classifier.train(
-    #     epochs=100,
-    #     batch_size=16,
-    #     learning_rate=0.0003,
-        
-    #     # learning_rate=0.01,
-    #     # optimizer='sgd',
-    # )
+    results = classifier.train(
+        epochs=100,
+        batch_size=16,
+        learning_rate=0.0003,
+    )
     
     # Load the model
     classifier.load_model('checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5')
-    # classifier.evaluate()
+    classifier.evaluate()
     
-    # image_to_test = 'data_pneumonia/train/PNEUMONIA/person1657_bacteria_4399.jpeg'
-    # predicted_class, confidence, _ = classifier.predict(image_to_test)
-    predicted_class, confidence, _ = classifier.predict(classifier.val_generator)
-    print(predicted_class, confidence)
     
-    # heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
-    # classifier.test_multiple_layers(image_to_test)
-    # classifier.plot_training_history()
-    # classifier.plot_confusion_matrix()
+    
+    image_to_test = 'data_pneumonia/train/PNEUMONIA/person1657_bacteria_4399.jpeg'
+    predicted_class, confidence, _ = classifier.predict(image_to_test)
+    
+    heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
+    classifier.test_multiple_layers(image_to_test)
+    classifier.plot_training_history()
+    classifier.plot_confusion_matrix()
 
 
+if __name__ == "__main__":
+    ensemble_testing()
+    train_testing()
+    
