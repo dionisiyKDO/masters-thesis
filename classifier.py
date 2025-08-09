@@ -336,69 +336,6 @@ class Classifier:
             logger.info(f"Class balance looks good. Ratio: {imbalance_ratio:.2f}:1")
 
 
-    def create_pneumo_resnet(self, input_shape=(224, 224, 3), num_classes=2):
-        """
-        Builds a custom ResNet-style architecture for pneumonia classification.
-        """
-        
-        def residual_block(x, filters, kernel_size=(3, 3), stride=1):
-            """A single residual block."""
-            # Main path
-            y = Conv2D(filters, kernel_size, strides=stride, padding='same', kernel_regularizer='l2')(x)
-            y = BatchNormalization()(y)
-            y = LeakyReLU(alpha=0.01)(y)
-            
-            y = Conv2D(filters, kernel_size, padding='same', kernel_regularizer='l2')(y)
-            y = BatchNormalization()(y)
-            
-            # Shortcut connection
-            # If strides > 1 or filter count changes, we need to project the shortcut.
-            if stride != 1 or x.shape[-1] != filters:
-                shortcut = Conv2D(filters, (1, 1), strides=stride, padding='same')(x)
-            else:
-                shortcut = x
-                
-            # Add shortcut to the main path
-            out = Add()([y, shortcut])
-            out = LeakyReLU(alpha=0.01)(out)
-            return out
-
-        # Input Layer
-        inputs = Input(shape=input_shape)
-        
-        # Initial Conv Stem
-        # A larger initial kernel to capture broader features from the start
-        x = Conv2D(32, (7, 7), strides=2, padding='same')(inputs)
-        x = BatchNormalization()(x)
-        x = LeakyReLU(alpha=0.01)(x)
-        x = MaxPooling2D((3, 3), strides=2, padding='same')(x)
-        
-        # --- Residual Blocks ---
-        
-        # Block 1 - Use 32 filters
-        x = residual_block(x, filters=32)
-        # Block 2 - Use 64 filters
-        x = residual_block(x, filters=64, stride=2) 
-        # Block 3 - Use 128 filters
-        x = residual_block(x, filters=128, stride=2)
-        # Block 4 - Use 256 filters
-        x = residual_block(x, filters=256, stride=2)
-        
-        # --- Classifier Head ---
-        x = GlobalAveragePooling2D()(x)
-        
-        x = Dense(128, activation='relu')(x)
-        x = Dropout(0.6)(x)
-        
-        # Output Layer
-        if num_classes == 2:
-            outputs = Dense(1, activation='sigmoid', name='output')(x)
-        else:
-            outputs = Dense(num_classes, activation='softmax', name='output')(x)
-            
-        model = Model(inputs=inputs, outputs=outputs, name='PneumoResNet')
-        return model
-
     def build_model(self) -> bool:
         """
         Build the specified model architecture.
@@ -474,7 +411,7 @@ class Classifier:
                     MaxPooling2D((2, 2), name='pool3'),
                     Dropout(0.25, name='dropout3'),
 
-                    # Fourth Conv Block
+                    # Fourth Conv Block | Last
                     Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4'),
                     BatchNormalization(name='bn4'),
                     Conv2D(512, (3, 3), activation='relu', padding='same', name='conv4_last'),
@@ -500,9 +437,56 @@ class Classifier:
                     logger.info(f"Added softmax output layer for {self.num_classes}-class classification")
             
             elif self.model_name == 'OwnV3':
-                logger.info("Building custom PneumoResNet architecture")
-                self.model = self.create_pneumo_resnet(input_shape=self.img_shape, num_classes=self.num_classes)
-            
+                logger.info("Building custom OwnV3 architecture")
+                
+                def residual_block(x, filters, kernel_size=(3, 3), stride=1):
+                    # Main path
+                    y = Conv2D(filters, kernel_size, strides=stride, padding='same', kernel_regularizer='l2')(x)
+                    y = BatchNormalization()(y)
+                    y = LeakyReLU(alpha=0.01)(y)
+
+                    y = Conv2D(filters, kernel_size, padding='same', kernel_regularizer='l2')(y)
+                    y = BatchNormalization()(y)
+
+                    # Shortcut connection
+                    # If strides > 1 or filter count changes, we need to project the shortcut.
+                    if stride != 1 or x.shape[-1] != filters:
+                        shortcut = Conv2D(filters, (1, 1), strides=stride, padding='same')(x)
+                    else:
+                        shortcut = x
+
+                    # Add shortcut to the main path
+                    out = Add()([y, shortcut])
+                    out = LeakyReLU(alpha=0.01)(out)
+                    return out
+
+                # --- Input & Stem ---
+                inputs = Input(shape=self.img_shape)
+                x = Conv2D(32, (7, 7), strides=2, padding='same')(inputs)
+                x = BatchNormalization()(x)
+                x = LeakyReLU(alpha=0.01)(x)
+                x = MaxPooling2D((3, 3), strides=2, padding='same')(x)
+
+                # --- Residual Blocks ---
+                x = residual_block(x, filters=32)
+                x = residual_block(x, filters=64, stride=2) 
+                x = residual_block(x, filters=128, stride=2)
+                x = residual_block(x, filters=256, stride=2)
+
+                # --- Classifier Head ---
+                x = GlobalAveragePooling2D()(x)
+                x = Dense(128, activation='relu')(x)
+                x = Dropout(0.6)(x)
+
+                # Output
+                if self.num_classes == 2:
+                    outputs = Dense(1, activation='sigmoid', name='output')(x)
+                    logger.info("Added sigmoid output layer for binary classification")
+                else:
+                    outputs = Dense(self.num_classes, activation='softmax', name='output')(x)
+                    logger.info(f"Added softmax output layer for {self.num_classes}-class classification")
+
+                self.model = Model(inputs=inputs, outputs=outputs, name='OwnV3')            
             
             elif self.model_name == 'AlexNet':
                 logger.info("Building AlexNet architecture")
