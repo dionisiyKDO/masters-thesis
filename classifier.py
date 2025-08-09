@@ -30,6 +30,7 @@ from tensorflow.keras.layers import (
     Input, ReLU, LeakyReLU, Add
 )
 
+#region Env Setup
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 warnings.filterwarnings("ignore", category=UserWarning)
 
@@ -43,54 +44,56 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
-
+#endregion
 
 class Classifier:
     
     AVAILABLE_MODELS = [
-        'OwnV3', 'OwnV2', 'OwnV1', 'SimpleNet', 'VGG16', 'VGG19', 'AlexNet', 
+        'OwnV3', 'OwnV2', 'OwnV1', 'VGG16', 'VGG19', 'AlexNet', 
         'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2'
     ]
-    
-    SUPPORTED_IMAGE_FORMATS = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
-    
+        
     def __init__(self, 
                  model_name: str = 'OwnV1',
                  img_size: Tuple[int, int] = (150, 150),
-                 data_dir: Optional[str] = None,
-                 class_labels: Optional[Dict[str, int]] = None,
-                 min_images_per_class: int = 10) -> None:
+                 data_dir: Optional[str] = None) -> None:
         """
         Initialize the Classifier with specified configuration.
         
         Args:
             model_name: Name of the model architecture to use
             img_size: Target image dimensions as (width, height)
-            data_dir: Path to the root data directory containing class subdirectories
-            class_labels: Optional manual mapping of class names to indices.
-                         If None, will auto-detect from directory structure.
-            min_images_per_class: Minimum number of images required per class
+            data_dir: Path to the root data directory containing class subdirectories\n
+                Expects directory structure like:
+                    data_dir/
+                    ├── train/
+                    │   ├── class1/
+                    │   └── class2/
+                    ├── test/
+                    │   ├── class1/
+                    │   └── class2/
+                    └── val/ (optional)
+                        ├── class1/
+                        └── class2/
         
         Raises:
             ValueError: If model_name is not in AVAILABLE_MODELS
         """
         logger.info(f"Initializing Classifier with model: {model_name}, image size: {img_size}")
         
-        
         if model_name not in self.AVAILABLE_MODELS:
             logger.error(f"Unsupported model '{model_name}'. Available: {self.AVAILABLE_MODELS}")
-            raise ValueError(f"Model '{model_name}' not supported. Available models: {self.AVAILABLE_MODELS}")
+            raise ValueError(f"Unsupported model '{model_name}'. Available: {self.AVAILABLE_MODELS}")
         
         self.model_name = model_name
         self.img_size = img_size
         self.img_shape = (*img_size, 3)
         self.data_dir = data_dir
-        self.min_images_per_class = min_images_per_class
         
         self.train_dir, self.val_dir, self.test_dir = self._detect_data_structure()
         
         # Auto-detect classes from directory structure or use provided labels
-        self.class_labels = class_labels or self._detect_classes()
+        self.class_labels = self._detect_classes()
         self.num_classes = len(self.class_labels)
         
         # Validate classification setup
@@ -109,7 +112,6 @@ class Classifier:
         
         self._setup_environment()
         logger.info(f"Classifier initialization complete. Classes: {list(self.class_labels.values())}")
-
 
     def _setup_environment(self) -> None:
         """Configure GPU settings and optimize TensorFlow environment."""
@@ -134,19 +136,6 @@ class Classifier:
     def _detect_classes(self) -> Dict[int, str]:
         """
         Auto-detect class labels from directory structure.
-        
-        Expects directory structure like:
-        
-            data_dir/
-            ├── train/
-            │   ├── class1/
-            │   └── class2/
-            ├── test/
-            │   ├── class1/
-            │   └── class2/
-            └── val/ (optional)
-                ├── class1/
-                └── class2/
         
         Returns:
             Dictionary mapping class indices to class names
@@ -204,6 +193,7 @@ class Classifier:
             f"Expected directory structure not found in {self.data_dir}. "
             "Expected: train/ and test/ directories (val/ is optional)"
         )
+    
     
     def setup_data_generators(self,
                             train_dir: Optional[str] = None,
@@ -806,6 +796,7 @@ class Classifier:
         
         return results
     
+    
     def predict(self, image_path: str) -> Tuple[str, float, Dict[str, float]]:
         """
         Predict class for a single image.
@@ -904,6 +895,35 @@ class Classifier:
         logger.info(f"  Final test loss: {results['loss']:.4f}")
         
         return results
+    
+    def evaluate_with_confidences(self):
+        """
+        Runs the model on self.val_generator and returns per-image predictions,
+        confidences, and ground truth labels.
+        """
+        if self.val_generator is None:
+            logger.warning("val_generator is None — preparing data...")
+            self.setup_data_generators()
+
+        # Predict probabilities for all images
+        probs = self.model.predict(self.val_generator, verbose=0)
+
+        # Binary classification → convert to shape (n_samples, 2)
+        if probs.shape[1] == 1:
+            probs = np.hstack([1 - probs, probs])
+
+        preds = np.argmax(probs, axis=1)              # predicted class index
+        confs = np.max(probs, axis=1)                 # confidence score
+        labels = self.val_generator.classes           # true labels
+        class_labels = self.class_labels              # label names
+
+        return {
+            "probs": probs,                           # (n_samples, n_classes)
+            "pred_indices": preds,                    # (n_samples,)
+            "confidences": confs,                      # (n_samples,)
+            "true_indices": labels,                    # (n_samples,)
+            "class_labels": class_labels
+        }
         
         
     
@@ -1171,16 +1191,78 @@ class Classifier:
         fig.show()
 
 
+def evaluate_ensemble(models_info, data_dir, img_size=(150, 150), weights=None):
+    """
+    models_info: dict {model_name: checkpoint_path}
+    Returns: ensemble accuracy
+    """
+    all_probs = []
+    true_labels = None
+    class_labels = None
+
+    for name, ckpt in models_info.items():
+        clf = Classifier(model_name=name, img_size=img_size, data_dir=data_dir)
+        clf.load_model(ckpt)
+        res = clf.evaluate_with_confidences()
+
+        all_probs.append(res["probs"])
+        if true_labels is None:
+            true_labels = res["true_indices"]
+            class_labels = res["class_labels"]
+
+    if weights is None:
+        # Default to equal weights if none are provided
+        weights = np.ones(len(all_probs)) / len(all_probs)
+    
+    # Calculate the weighted average of the probabilities
+    avg_probs = np.average(np.stack(all_probs, axis=0), axis=0, weights=weights)
+    final_preds = np.argmax(avg_probs, axis=1)
+
+    accuracy = np.mean(final_preds == true_labels)
+    logger.info(f"Ensemble accuracy: {accuracy:.4f}")
+
+    return accuracy
+
+
 if __name__ == "__main__":
+    checkpoint_paths = {
+        "OwnV3": "checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5",
+        # "OwnV1": "checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
+        # "VGG16": "checkpoints/Saved/VGG16.epoch18-val_acc0.9534.hdf5"
+        # "AlexNet": "checkpoints/Saved/AlexNet.epoch27-val_acc0.9761.hdf5",
+        # "OwnV2": "checkpoints/Saved/OwnV2.epoch28-val_acc0.9705.hdf5",
+        "InceptionV3": "checkpoints/Saved/InceptionV3.epoch13-val_acc0.9545.hdf5",
+    }
+    # data_dir = 'data_bone_frac/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification'
+    data_dir = 'data_pneumonia_final_balanced_og'
+    # data_dir = 'data_mura/data_mura_dir'
+    # data_dir = 'data_alzheimer/data_split'
+    
+
+    # ensemble_predict_from_checkpoints(checkpoint_paths)
+    weights = [
+        0.9830, 
+        # 0.9761,
+        # 0.9534,
+        # 0.9761,
+        # 0.9705,
+        0.9545,
+    ] 
+    acc = evaluate_ensemble(checkpoint_paths, data_dir, (150, 150), weights=weights)
+    print(acc)
+    exit()
+    
+    
+    
+    
+    
+    
+    
     # AVAILABLE_MODELS = [
     #     'OwnV2', 'OwnV1', 'VGG16', 'VGG19', 'AlexNet', 
     #     'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2'
     # ]
     
-    # data_dir = 'data_bone_frac/Bone_Fracture_Binary_Classification/Bone_Fracture_Binary_Classification'
-    data_dir = 'data_pneumonia_final_balanced_og'
-    # data_dir = 'data_mura/data_mura_dir'
-    # data_dir = 'data_alzheimer/data_split'
     
     classifier = Classifier(
         model_name='OwnV3',
@@ -1190,23 +1272,27 @@ if __name__ == "__main__":
     )
     
     # Train the model
-    results = classifier.train(
-        epochs=100,
-        batch_size=16,
-        learning_rate=0.0003,
+    # results = classifier.train(
+    #     epochs=100,
+    #     batch_size=16,
+    #     learning_rate=0.0003,
         
-        # learning_rate=0.01,
-        # optimizer='sgd',
-    )
+    #     # learning_rate=0.01,
+    #     # optimizer='sgd',
+    # )
     
     # Load the model
-    # classifier.load_model('checkpoints/Saved/OwnV3.epoch30-val_acc0.9818.hdf5')
-    classifier.evaluate()
+    classifier.load_model('checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5')
+    # classifier.evaluate()
     
-    image_to_test = 'data_pneumonia/train/PNEUMONIA/person1657_bacteria_4399.jpeg'
-    predicted_class, confidence, _ = classifier.predict(image_to_test)
+    # image_to_test = 'data_pneumonia/train/PNEUMONIA/person1657_bacteria_4399.jpeg'
+    # predicted_class, confidence, _ = classifier.predict(image_to_test)
+    predicted_class, confidence, _ = classifier.predict(classifier.val_generator)
+    print(predicted_class, confidence)
     
-    heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
-    classifier.test_multiple_layers(image_to_test)
-    classifier.plot_training_history()
-    classifier.plot_confusion_matrix()
+    # heatmap_img = classifier.generate_gradcam_heatmap(image_to_test, conv_layer_name='conv4_last')
+    # classifier.test_multiple_layers(image_to_test)
+    # classifier.plot_training_history()
+    # classifier.plot_confusion_matrix()
+
+
