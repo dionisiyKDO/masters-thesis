@@ -1265,6 +1265,6 @@ def train_testing():
 
 
 if __name__ == "__main__":
-    ensemble_testing()
-    train_testing()
+    # ensemble_testing()
+    # train_testing()
     
