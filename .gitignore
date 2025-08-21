@@ -16,7 +16,6 @@ results/
 augment.py
 redistribute.py
 test-1.py
-dataset_process.py
 
 backend/static/frontend/
 backend/staticfiles/
