@@ -13,6 +13,13 @@ data_pneumonia_final_balanced_test/
 data_pneumonia_final_balanced (Copy)/
 results/
 .vscode/
+augment.py
+redistribute.py
+test-1.py
+dataset_process.py
+
+backend/static/frontend/
+backend/staticfiles/
 
 fig.png
 fract.png
