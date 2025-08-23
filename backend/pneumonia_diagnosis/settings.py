@@ -10,8 +10,9 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
-import os
+from datetime import timedelta
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -39,11 +40,13 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     
+    # Third-party apps:
     "rest_framework",
-    # 'rest_framework.authtoken',
     'corsheaders',
     
-    "api"
+    # My apps:
+    "api",
+    'users',
 ]
 
 MIDDLEWARE = [
@@ -57,6 +60,7 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:8000',
@@ -64,19 +68,6 @@ CORS_ALLOWED_ORIGINS = [
     'http://localhost:5173',
     'http://127.0.0.1:5173',
 ]
-
-CORS_ALLOW_CREDENTIALS = True
-
-# REST_FRAMEWORK = {
-#     'DEFAULT_AUTHENTICATION_CLASSES': [
-#         'rest_framework.authentication.BasicAuthentication',
-#         'rest_framework.authentication.TokenAuthentication',
-#         'rest_framework.authentication.SessionAuthentication',
-#     ],
-#     'DEFAULT_PERMISSION_CLASSES': [
-#         'rest_framework.permissions.IsAuthenticated',
-#     ],
-# }
 
 ROOT_URLCONF = 'pneumonia_diagnosis.urls'
 
@@ -97,6 +88,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'pneumonia_diagnosis.wsgi.application'
 
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticatedOrReadOnly',
+    )
+}
 
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
@@ -108,6 +107,7 @@ DATABASES = {
     }
 }
 
+LOGIN_REDIRECT_URL = '/'
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
@@ -127,6 +127,12 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+AUTH_USER_MODEL = 'users.User'
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(hours=3), # timedelta(days=30),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=14),
+}
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
