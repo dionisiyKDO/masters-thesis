@@ -30,6 +30,10 @@ test.py
 
 classifier.log
 
+
+
+backend/db.sqlite3
+
 # Python-generated files
 __pycache__/
 *.py[oc]
