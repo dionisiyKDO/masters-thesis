@@ -11,6 +11,7 @@ dependencies = [
     "django-rest-framework>=0.1.0",
     "djangorestframework>=3.16.1",
     "djangorestframework-simplejwt>=5.5.1",
+    "faker>=37.5.3",
     "lime>=0.2.0.1",
     "matplotlib>=3.10.3",
     "opencv-python>=4.11.0.86",
