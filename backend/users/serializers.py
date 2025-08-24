@@ -1,19 +1,50 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
-from .models import User
+from django.db import transaction
+from .models import User, DoctorProfile, PatientProfile
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ('id', 'username', 'email', "role")
 
+class DoctorProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DoctorProfile
+        fields = ('license_number', 'specialization')
+
+class PatientProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientProfile
+        fields = ('dob', 'sex', 'medical_record_number')
+
+
+
 class RegisterSerializer(serializers.ModelSerializer):
+    doctor_profile = DoctorProfileSerializer(required=False)
+    patient_profile = PatientProfileSerializer(required=False)
+    
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', "role")
+        fields = ('id', 'username', 'email', 'password', 'role', 'doctor_profile', 'patient_profile')
         extra_kwargs = {"password": {"write_only": True}}
 
+    def validate(self, data):
+        """
+        Check that profile data is provided for the selected role.
+        """
+        role = data.get('role')
+        if role == 'doctor' and 'doctor_profile' not in data:
+            raise serializers.ValidationError({"doctor_profile": "This field is required for doctors."})
+        if role == 'patient' and 'patient_profile' not in data:
+            raise serializers.ValidationError({"patient_profile": "This field is required for patients."})
+        return data
+
+    @transaction.atomic
     def create(self, validated_data):
+        doctor_data = validated_data.pop('doctor_profile', None)
+        patient_data = validated_data.pop('patient_profile', None)
+        
         user = User.objects.create_user(
             username=validated_data['username'],
             email=validated_data['email'],
@@ -21,6 +52,13 @@ class RegisterSerializer(serializers.ModelSerializer):
             role=validated_data.get("role", "patient"),  # default patient
             is_staff=(True if validated_data.get("role") == "admin" else False)  # admin -> is_staff
         )
+
+        # Create the corresponding profile based on the role
+        if validated_data['role'] == 'doctor' and doctor_data:
+            DoctorProfile.objects.create(user=user, **doctor_data)
+        elif validated_data['role'] == 'patient' and patient_data:
+            PatientProfile.objects.create(user=user, **patient_data)
+            
         return user
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
