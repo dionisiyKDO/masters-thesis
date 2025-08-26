@@ -1,8 +1,8 @@
 from rest_framework import serializers
 from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation
-from users.serializers import UserSerializer # Import the simple UserSerializer
+from users.serializers import UserSerializer
 
-# --- Nested Serializers for Detailed Views ---
+# Nested Serializers for Detailed Views
 
 class AIAnalysisSerializer(serializers.ModelSerializer):
     class Meta:
@@ -26,7 +26,7 @@ class ChestScanSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 
-# --- Main Serializers for the API Endpoints ---
+# Main Serializers for the API Endpoints
 
 class MedicalCaseSerializer(serializers.ModelSerializer):
     # When reading, show user details, not just IDs
