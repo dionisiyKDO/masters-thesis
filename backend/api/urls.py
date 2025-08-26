@@ -1,16 +1,18 @@
 from django.urls import path, include
 from rest_framework import routers
-from .views import (hello, DoctorDashboardView, PatientDashboardView, AdminDashboardView)
+from . import views
 
 app_name = "api"
 router = routers.DefaultRouter()
-router.register(r'doctor', DoctorDashboardView, basename="doctor_dashboard")
-router.register(r'patient', PatientDashboardView, basename="patient_dashboard")
-router.register(r'admin', AdminDashboardView, basename="admin_dashboard")
+router.register(r'cases', views.MedicalCaseViewSet, basename='medicalcase')
+router.register(r'scans', views.ChestScanViewSet, basename='chestscan')
+router.register(r'analyses', views.AIAnalysisViewSet, basename='aianalysis')
+router.register(r'annotations', views.DoctorAnnotationViewSet, basename='doctorannotation')
+router.register(r'models', views.ModelVersionViewSet, basename='modelversion')
 
 urlpatterns = [
     path('', include(router.urls)),
-    path("hello/", hello),
+    path("hello/", views.hello),
 ]
 
 
