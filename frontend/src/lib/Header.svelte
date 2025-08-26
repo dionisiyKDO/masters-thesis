@@ -6,12 +6,12 @@
     ];
 </script>
 
-<header class="p-6 pb-4 mb-6 bg-(--surface) border-b border-[--border]">
+<header class="px-6 py-3 mb-6 bg-background border-b border-border selection:bg-primary selection:text-primary-foreground">
     <nav class="flex items-center justify-between">
         {#if $user}
-            <a href="/" class="text-xl font-bold">{$user?.username}'s Blog</a>
+            <a href="/" class="text-xl font-bold">{$user?.username}'s dashboard</a>
         {:else}
-            <a href="/" class="text-xl font-bold">Blog</a>
+            <a href="/" class="text-xl font-bold">Home</a>
         {/if}
         
         <div class="flex items-center gap-4">
