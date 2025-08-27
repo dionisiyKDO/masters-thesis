@@ -61,7 +61,7 @@ class AIAnalysis(models.Model):
     ]
 
     scan = models.ForeignKey(ChestScan, on_delete=models.CASCADE, related_name="ai_analyses")
-    model_version = models.ForeignKey(ModelVersion, on_delete=models.CASCADE, related_name="analyses")
+    model_version = models.ForeignKey(ModelVersion, on_delete=models.CASCADE, related_name="ai_model")
     prediction_label = models.CharField(max_length=20, choices=LABEL_CHOICES)
     confidence_score = models.FloatField()
     heatmap_path = models.ImageField(upload_to="heatmaps/", null=True, blank=True)
