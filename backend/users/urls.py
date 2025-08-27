@@ -5,7 +5,7 @@ from rest_framework_simplejwt.views import (
     TokenRefreshView,
 )
 
-from .views import UserViewSet, RegisterView, CustomTokenObtainPairView
+from .views import UserViewSet, RegisterView, CustomTokenObtainPairView, PatientListView, DoctorListView
 
 app_name = "users"
 router = routers.DefaultRouter()
@@ -14,6 +14,10 @@ router.register(r"users", UserViewSet)
 urlpatterns = [
     path("", include(router.urls)),
     path("register/", RegisterView.as_view(), name="register"),
+    
+    # List view endpoints:
+    path("patients/", PatientListView.as_view(), name="patient-list"),
+    path("doctors/", DoctorListView.as_view(), name="doctor-list"),
     # JWT authentication:
     path("token/", CustomTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),

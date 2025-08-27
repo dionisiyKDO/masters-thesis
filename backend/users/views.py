@@ -19,6 +19,21 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAdminUser]
 
+class PatientListView(generics.ListAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAuthenticated]   # or IsAdminUser, depends on your rules
+
+    def get_queryset(self):
+        return User.objects.filter(role="patient")
+
+
+class DoctorListView(generics.ListAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAdminUser]
+
+    def get_queryset(self):
+        return User.objects.filter(role="doctor")
+
 
 class RegisterView(generics.CreateAPIView):
     """
