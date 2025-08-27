@@ -22,3 +22,72 @@ export interface User {
     username: string
     email: string
 }
+
+// API Model Types
+export interface SimpleUser {
+    id: number;
+    username: string;
+    email: string;
+    role: string;
+}
+
+export interface AIAnalysis {
+    id: number;
+    prediction_label: 'pneumonia' | 'normal';
+    confidence_score: number;
+    heatmap_path: string | null;
+    heatmap_type: string;
+    generated_at: string;
+    scan: number;
+    model_version: ModelVersion;
+}
+
+export interface ModelVersion {
+  id: number
+  uploaded_by_admin: SimpleUser
+  model_name: string
+  storage_uri: string
+  description: string
+  performance_metrics: PerformanceMetrics
+  is_active: boolean
+  created_at: string
+}
+
+export interface PerformanceMetrics {
+  accuracy: number
+  f1_score: number
+  precision: number
+}
+
+export interface DoctorAnnotation {
+    id: number;
+    notes: string;
+    created_at: string;
+    scan: number;
+    doctor: SimpleUser;
+}
+
+export interface ChestScan {
+    id: number;
+    image_path: string;
+    uploaded_at: string;
+    case: number;
+    ai_analyses: AIAnalysis[];
+    annotations: DoctorAnnotation[];
+}
+
+export interface MedicalCase {
+    id: number;
+    title: string;
+    description: string;
+    status: 'open' | 'closed' | 'monitoring';
+    diagnosis_summary: string | null;
+    created_at: string;
+    updated_at: string;
+    patient: SimpleUser;
+    primary_doctor: SimpleUser;
+}
+
+export interface MedicalCaseDetail extends MedicalCase {
+    scans: ChestScan[];
+}
