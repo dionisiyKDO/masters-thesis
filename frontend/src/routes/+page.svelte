@@ -1,26 +1,26 @@
-<script>
-  let message = "";
-  
-  // check dashboard api based on role
-  async function fetchDashboard() {
-    try {
-      const role = localStorage.getItem("role");
-      const response = await fetch(`http://127.0.0.1:8000/api/${role}/dashboard/`, {
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${localStorage.getItem("access_token")}`
-        }
-      });
-      const data = await response.json();
-      message = data.message;
-      console.log(data);
-      
-    } catch (error) {
-      message = "Error fetching dashboard data.";
-    }
-  }
-
-  fetchDashboard();
+<script lang="ts">
+    import { user } from '$lib/auth';
+    import PatientDashboard from '$lib/components/PatientDashboard.svelte';
+    import DoctorDashboard from '$lib/components/DoctorDashboard.svelte';
+    import AdminDashboard from '$lib/components/AdminDashboard.svelte';
 </script>
 
-<h1>{message}</h1>
+{#if $user}
+    {#if $user.role === 'patient'}
+        <PatientDashboard />
+    {:else if $user.role === 'doctor'}
+        <DoctorDashboard />
+    {:else if $user.role === 'admin'}
+        <AdminDashboard />
+    {:else}
+        <p>Invalid user role.</p>
+    {/if}
+{:else}
+    <div class="text-center">
+        <h1 class="text-2xl text-foreground">Welcome to the Pneumonia Diagnosis Platform</h1>
+        <p class="mt-4 text-base font-normal text-muted-foreground">Please log in to view your dashboard.</p>
+        <a href="/auth" class="button">
+            Go to Login
+        </a>
+    </div>    
+{/if}

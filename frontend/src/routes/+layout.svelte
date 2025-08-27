@@ -16,7 +16,7 @@
 </svelte:head>
 
 
-<div class="flex flex-col min-h-screen">
+<div class="flex flex-col min-h-screen bg-background selection:bg-primary selection:text-primary-foreground">
 	<Header />
 
 	<main class="flex-1 flex mx-auto w-full flex-col p-4 max-w-7xl">
