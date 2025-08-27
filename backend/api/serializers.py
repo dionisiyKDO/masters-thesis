@@ -3,8 +3,16 @@ from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnno
 from users.serializers import UserSerializer
 
 # Nested Serializers for Detailed Views
+class ModelVersionSerializer(serializers.ModelSerializer):
+    uploaded_by_admin = UserSerializer(read_only=True)
+
+    class Meta:
+        model = ModelVersion
+        fields = '__all__'
 
 class AIAnalysisSerializer(serializers.ModelSerializer):
+    model_version = ModelVersionSerializer(read_only=True)
+    
     class Meta:
         model = AIAnalysis
         fields = '__all__'
@@ -59,10 +67,3 @@ class MedicalCaseDetailSerializer(MedicalCaseSerializer):
     class Meta(MedicalCaseSerializer.Meta):
         fields = MedicalCaseSerializer.Meta.fields + ['scans']
 
-
-class ModelVersionSerializer(serializers.ModelSerializer):
-    uploaded_by_admin = UserSerializer(read_only=True)
-
-    class Meta:
-        model = ModelVersion
-        fields = '__all__'
