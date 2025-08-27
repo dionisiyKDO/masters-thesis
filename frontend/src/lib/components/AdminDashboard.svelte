@@ -1,3 +1,4 @@
+<!-- lib/components/AdminDashboard.svelte -->
 <script lang="ts">
     // TODO: Admin dashboard components
 </script>
