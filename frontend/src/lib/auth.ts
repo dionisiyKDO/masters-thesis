@@ -18,7 +18,6 @@ export async function login(username: string, password: string): Promise<boolean
 		});
 
 		console.log("Making request to: ", request_link);
-		
 
 		if (!response.ok) {
 			const data = await response.json();
@@ -28,7 +27,6 @@ export async function login(username: string, password: string): Promise<boolean
 		}
 
 		const data = (await response.json()) as LoginResponse;
-		console.log(data);
 
 		const receivedAccessToken = data.access;
 		const receivedRefreshToken = data.refresh;
