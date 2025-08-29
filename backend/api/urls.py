@@ -12,9 +12,8 @@ router.register(r'models', views.ModelVersionViewSet, basename='modelversion')
 
 urlpatterns = [
     path('', include(router.urls)),
-    path("hello/", views.hello),
+    path("cases/<int:case_id>/scans/upload/", views.ScanUploadView.as_view(), name="scan-upload"),
 ]
-
 
 # Viewset
 # router = DefaultRouter()

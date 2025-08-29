@@ -36,11 +36,11 @@ class ChestScan(models.Model):
 
 
 class ModelVersion(models.Model):
+    uploaded_by_admin = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="uploaded_models")
     model_name = models.CharField(max_length=255) # TODO: maybe get AVAIBLE_MODELS from classifier as ENUM
     storage_uri = models.CharField(max_length=500)
     description = models.TextField(blank=True, null=True)
     performance_metrics = models.JSONField(default=dict)
-    uploaded_by_admin = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="uploaded_models")
     is_active = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
