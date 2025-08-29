@@ -1,6 +1,10 @@
+from rest_framework import status
 from rest_framework.viewsets import ViewSet
+from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import api_view, action
+from rest_framework.parsers import MultiPartParser, FormParser
+from django.shortcuts import get_object_or_404
 
 from rest_framework import viewsets, permissions
 from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation
@@ -9,11 +13,24 @@ from .serializers import (
     ModelVersionSerializer, AIAnalysisSerializer, DoctorAnnotationSerializer
 )
 from .permissions import IsAdminOrReadOnly, IsDoctor, IsPatientOfCase, IsDoctorOfCase
+from .classifier import Classifier
 
+#region Env Setup
+import warnings
+import logging
+warnings.filterwarnings("ignore", category=UserWarning)
 
-@api_view(["GET"])
-def hello(request):
-    return Response({"message": "Hello from Django"})
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('classifier.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+#endregion
 
 
 class MedicalCaseViewSet(viewsets.ModelViewSet):
@@ -58,6 +75,49 @@ class ChestScanViewSet(viewsets.ModelViewSet):
     queryset = ChestScan.objects.all()
     serializer_class = ChestScanSerializer
     permission_classes = [permissions.IsAuthenticated, IsDoctorOfCase] # Only the assigned doctor can manage scans
+
+class ScanUploadView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request, case_id):
+        file = request.data.get("image")
+        if not file:
+            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # TODO: save file to model / storage
+        # example: Scan.objects.create(case_id=case_id, image=file)
+          
+        case = get_object_or_404(MedicalCase, id=case_id)
+        logger.info(f"Uploading scan for case {case_id} by user {request.user.id}")
+
+        # 1. Save scan
+        scan = ChestScan.objects.create(case=case, image_path=file)
+        
+        logger.info(f"Scan saved with ID {scan.id}, starting classification.")
+
+        # 2. Run CNN classifier
+        classifier = Classifier(
+            model_name='OwnV3',
+            img_size=(150, 150),
+            data_dir='../.archive/ml_tests/data_pneumonia_final_balanced_og'
+        )
+        classifier.load_model('checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5')
+        logger.info(f"Model loaded, running prediction on scan path {scan.image_path.path}.")
+        predicted_class, confidence, probabilities = classifier.predict(scan.image_path.path)
+        # label, confidence, heatmap_path, model_name = classifier.predict(scan.image.path)
+        logger.info(f"Prediction complete: {predicted_class} with confidence {confidence:.4f}")
+        # 3. Save analysis
+        model_version = ModelVersion.objects.get(model_name='PneumoDetect_v1.0')
+        AIAnalysis.objects.create(
+            scan=scan,
+            prediction_label=predicted_class,
+            confidence_score=confidence,
+            # heatmap_path=heatmap_path,
+            model_version=model_version,
+        )
+
+        return Response({"message": "Upload successful"}, status=status.HTTP_201_CREATED)      
 
 class AIAnalysisViewSet(viewsets.ReadOnlyModelViewSet):
     """Read-only endpoint for AI Analyses."""
