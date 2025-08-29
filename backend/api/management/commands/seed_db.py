@@ -18,6 +18,99 @@ MAX_CASES_PER_PATIENT = 4
 MAX_SCANS_PER_CASE = 5
 MAX_ANNOTATIONS_PER_SCAN = 3
 
+SCANS = [
+    'seeding/NORMAL_IM-0007-0001_original.jpeg',
+    'seeding/NORMAL_IM-0019-0001_original.jpeg',
+    'seeding/NORMAL_IM-0025-0001_aug2_hflip_bright1.02.jpeg',
+    'seeding/NORMAL_IM-0029-0001_original.jpeg',
+    'seeding/NORMAL_IM-0033-0001-0001_original.jpeg',
+    'seeding/NORMAL_IM-0033-0001-0002_aug2_rot4.8_cont1.07_blur.jpeg',
+    'seeding/NORMAL_IM-0037-0001_aug2_hflip_blur.jpeg',
+    'seeding/NORMAL_IM-0043-0001_original.jpeg',
+    'seeding/NORMAL_IM-0073-0001_aug1_hflip_bright0.99_blur_color0.98.jpeg',
+    'seeding/NORMAL_IM-0077-0001_aug1_hflip_cont1.12_blur.jpeg',
+    'seeding/NORMAL_IM-0095-0001_original.jpeg',
+    'seeding/NORMAL_IM-0111-0001_aug2_rot-11.9_bright0.82_cont0.97_blur_color0.98.jpeg',
+    'seeding/NORMAL_IM-0115-0001_aug2_bright1.15_cont1.07_blur_color0.92.jpeg',
+    'seeding/NORMAL_IM-0117-0001_aug1_rot13.5_cont0.84_blur_color1.06.jpeg',
+    'seeding/NORMAL_IM-0117-0001_aug2_hflip_cont0.87.jpeg',
+    'seeding/NORMAL_IM-0131-0001_aug1_rot-13.1_hflip_bright0.82_cont1.05_blur.jpeg',
+]
+
+MODELS = [
+    {
+        "name": "AlexNet",
+        "uri": "/checkpoints/Saved/AlexNet.epoch27-val_acc0.9761.hdf5",
+        "desc": "AlexNet based model, fast but less accurate than newer architectures.",
+        "metrics": {"accuracy": 0.9761, "f1_score": 0.88, "precision": 0.89},
+        "active": True
+    },
+    {
+        "name": "OwnV1",
+        "uri": "/checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
+        "desc": "Initial release of the OwnV1 model based on a custom CNN architecture.",
+        "metrics": {"accuracy": 0.9761, "f1_score": 0.89, "precision": 0.90},
+        "active": False # An older, inactive model
+    },
+    {
+        "name": "OwnV2",
+        "uri": "/checkpoints/Saved/OwnV2.epoch28-val_acc0.9705.hdf5",
+        "desc": "Second version of the custom CNN architecture with improvements over V1.",
+        "metrics": {"accuracy": 0.9705, "f1_score": 0.90, "precision": 0.91},
+        "active": True
+    },
+    {
+        "name": "OwnV3",
+        "uri": "/checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5",
+        "desc": "Latest version of the custom CNN architecture with best performance.",
+        "metrics": {"accuracy": 0.9830, "f1_score": 0.91, "precision": 0.92},
+        "active": True
+    },
+    # {
+    #     "name": "InceptionV3",
+    #     "uri": "/checkpoints/Saved/InceptionV3.epoch13-val_acc0.9545.hdf5",
+    #     "desc": "Transfer learning model using InceptionV3 as base. Good balance of speed and accuracy.",
+    #     "metrics": {"accuracy": 0.9545, "f1_score": 0.87, "precision": 0.88},
+    #     "active": True
+    # },
+    # {
+    #     "name": "EfficientNetV2",
+    #     "uri": "/checkpoints/Saved/EfficientNetV2.epoch01-val_acc0.7295.hdf5",
+    #     "desc": "Early experiment with EfficientNetV2. Underperformed compared to others.",
+    #     "metrics": {"accuracy": 0.7295, "f1_score": 0.65, "precision": 0.66},
+    #     "active": False # An older, inactive model
+    # },
+    # {
+    #     "name": "ResNet50",
+    #     "uri": "/checkpoints/Saved/ResNet50.epoch22-val_acc0.8818.hdf5",
+    #     "desc": "ResNet50 based model with moderate performance.",
+    #     "metrics": {"accuracy": 0.8818, "f1_score": 0.75, "precision": 0.76},
+    #     "active": True
+    # },
+    # {
+    #     "name": "VGG16",
+    #     "uri": "/checkpoints/Saved/VGG16.epoch18-val_acc0.9534.hdf5",
+    #     "desc": "VGG16 based model, similar performance to InceptionV3 but slower inference.",
+    #     "metrics": {"accuracy": 0.9534, "f1_score": 0.86, "precision": 0.87},
+    #     "active": True
+    # },
+    # {
+    #     "name": "VGG19",
+    #     "uri": "/checkpoints/Saved/VGG19.epoch29-val_acc0.9489.hdf5",
+    #     "desc": "VGG19 based model with slightly lower accuracy than VGG16.",
+    #     "metrics": {"accuracy": 0.9489, "f1_score": 0.85, "precision": 0.86},
+    #     "active": True
+    # },
+    # {
+    #     "name": "InceptionResNetV2",
+    #     "uri": "/checkpoints/Saved/InceptionResNetV2.epoch16-val_acc0.9409.hdf5",
+    #     "desc": "High capacity model with InceptionResNetV2 backbone. Computationally intensive.",
+    #     "metrics": {"accuracy": 0.9409, "f1_score": 0.84, "precision": 0.85},
+    #     "active": True
+    # },
+    
+]
+
 # Initialize Faker
 fake = Faker()
 
@@ -104,26 +197,7 @@ class Command(BaseCommand):
 
         ## 4. Create Multiple AI Model Versions
         model_versions = []
-        model_data = [
-            {
-                "name": "PneumoDetect_v1.0", "uri": "/models/pneumodetect_v1.0.pt",
-                "desc": "Initial release of the PneumoDetect model based on EfficientNet-B0.",
-                "metrics": {"accuracy": 0.91, "f1_score": 0.88, "precision": 0.89},
-                "active": False # An older, inactive model
-            },
-            {
-                "name": "PneumoDetect_v1.2", "uri": "/models/pneumodetect_v1.2.pt",
-                "desc": "Improved version with larger training dataset. Reduced false positives.",
-                "metrics": {"accuracy": 0.94, "f1_score": 0.91, "precision": 0.92},
-                "active": True
-            },
-            {
-                "name": "LungClassifier_v2.1-beta", "uri": "/models/lungclassifier_v2.1b.pt",
-                "desc": "New architecture (Vision Transformer) for classifying multiple conditions.",
-                "metrics": {"accuracy": 0.95, "f1_score": 0.93, "precision": 0.94},
-                "active": True
-            }
-        ]
+        model_data = MODELS
         for data in model_data:
             model = ModelVersion.objects.create(
                 model_name=data["name"],
@@ -152,7 +226,7 @@ class Command(BaseCommand):
         total_cases, total_scans = 0, 0
 
         for patient in patients:
-            # Each patient has 1 to MAX_CASES_PER_PATIENT medical cases
+            # Each patient has 2 to MAX_CASES_PER_PATIENT medical cases
             for _ in range(random.randint(2, MAX_CASES_PER_PATIENT)):
                 total_cases += 1
                 primary_doctor = random.choice(doctors)
@@ -165,12 +239,13 @@ class Command(BaseCommand):
                     status=random.choice(case_statuses)
                 )
 
-                # Each case has 1 to MAX_SCANS_PER_CASE chest scans
+                # Each case has 2 to MAX_SCANS_PER_CASE chest scans
                 for i in range(random.randint(2, MAX_SCANS_PER_CASE)):
                     total_scans += 1
                     scan = ChestScan.objects.create(
                         case=case,
-                        image_path=f"scans/patient_{patient.id}/case_{case.id}_scan_{i+1}.dcm"
+                        # image_path=f"scans/patient_{patient.id}/case_{case.id}_scan_{i+1}.dcm"
+                        image_path=random.choice(SCANS)
                     )
 
                     # Each scan gets an AI analysis from one or more ACTIVE models
