@@ -26,7 +26,7 @@
 		<div>
 			<!-- <p class="font-medium text-foreground mb-2">Chest X-Ray</p> -->
 			<img
-				src={`${API_BASE}${scan.image_path}`}
+				src={`${scan.image_path}`}
 				alt="Chest Scan"
 				class="rounded-md border border-border w-full min-h-[150px] max-h-[500px] object-contain"
 			/>
