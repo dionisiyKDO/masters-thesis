@@ -59,26 +59,28 @@
                 <!-- Sidebar -->
                 <div class="w-1/6 max-w-sm bg-card rounded-lg p-4 overflow-y-auto space-y-3">
                     <h2 class="text-xl font-semibold text-foreground mb-3">Scans</h2>
+                    <!-- New Scan button -->
                     {#if $user?.role === "doctor"}
-                        <button
-                            class="cursor-pointer p-3 border rounded-lg bg-green-600 text-white"
-                            onclick={() => selectedScan = null}
-                        >
-                            + New Scan
-                        </button>
+                        <div class="pb-3 mb-3 border-b-2 border-border">
+                            <button
+                                class="cursor-pointer p-3 border rounded-lg bg-primary text-primary-foreground w-full hover:bg-primary/85 transition-all"
+                                onclick={() => selectedScan = null}
+                            >
+                                + New Scan
+                            </button>
+                        </div>
                     {/if}
 
+                    
+                    <!-- Each scan -->
                     {#if caseDetail.scans.length > 0}
                         {#each caseDetail.scans as scan (scan.id)}
                             <button
-                                class="cursor-pointer p-3 border rounded-lg hover:bg-primary hover:text-primary-foreground transition
-                                    {selectedScan?.id === scan.id ? 'bg-primary text-primary-foreground' : 'bg-muted text-card-foreground'}"
+                                class="cursor-pointer p-3 border-2 rounded-lg hover:bg-secondary/85 hover:text-secondary-foreground transition
+                                    {selectedScan?.id === scan.id ? 'bg-secondary text-secondary-foreground' : 'bg-muted text-card-foreground'}"
                                 onclick={() => selectedScan = scan}
                             >
                                 <p class="font-medium">{formatDate(scan.uploaded_at)}</p>
-                                <!-- <p class="text-xs text-primary-foreground">
-                                    Scan {scan.id}
-                                </p> -->
                             </button>
                         {/each}
                     {:else}
