@@ -16,7 +16,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
-
+from django.conf import settings
+from django.conf.urls.static import static
 
 urlpatterns = [
     # Admin endpoint:
@@ -25,7 +26,13 @@ urlpatterns = [
     # Api endpoints:
     path('api/auth/', include('users.urls')),
     path("api/", include("api.urls")),
-    
-    # Frontend:
+]
+
+# media URL pattern, before the frontend catch-all
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+# frontend's catch-all pattern LAST
+urlpatterns += [
     path('', include('frontend.urls')),
 ]
