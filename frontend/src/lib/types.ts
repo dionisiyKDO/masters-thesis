@@ -91,3 +91,23 @@ export interface MedicalCase {
 export interface MedicalCaseDetail extends MedicalCase {
     scans: ChestScan[];
 }
+
+// Register form data type
+export interface FormData {
+	username: string;
+	password: string;
+	email: string;
+	first_name: string;
+	last_name: string;
+	role: 'patient' | 'doctor';
+	doctor_profile: {
+		specialization: string;
+		license_number: string;
+	} | undefined;
+	patient_profile: {
+		dob: string;
+		sex: string;
+		medical_record_number: string;
+		contact_info: string;
+	} | undefined;
+}
