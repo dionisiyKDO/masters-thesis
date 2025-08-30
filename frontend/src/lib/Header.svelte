@@ -24,7 +24,8 @@
                 {#if $user}
                     <button onclick={logout} class="min-w-16 ml-4">Logout</button>
                 {:else}
-                    <a href="/auth" class="min-w-16 inline-block ml-4">Login</a>
+                    <a href="/login" class="min-w-16 inline-block ml-4">Login</a>
+                    <a href="/register" class="min-w-16 inline-block ml-4">Register</a>
                 {/if}
             </div>
         </div>
