@@ -1,5 +1,5 @@
 import { goto } from '$app/navigation';
-import { user, login } from '$lib/auth';
+import { login } from '$lib/auth';
 
 export async function handleSubmit(event: Event) {
 	event.preventDefault();
