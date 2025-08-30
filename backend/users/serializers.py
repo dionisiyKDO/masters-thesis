@@ -6,7 +6,7 @@ from .models import User, DoctorProfile, PatientProfile
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', "role")
+        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'role')
 
 class DoctorProfileSerializer(serializers.ModelSerializer):
     class Meta:
