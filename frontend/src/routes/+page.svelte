@@ -19,7 +19,7 @@
     <div class="text-center">
         <h1 class="text-2xl text-foreground">Welcome to the Pneumonia Diagnosis Platform</h1>
         <p class="mt-4 text-base font-normal text-muted-foreground">Please log in to view your dashboard.</p>
-        <a href="/auth" class="button">
+        <a href="/login" class="button">
             Go to Login
         </a>
     </div>    
