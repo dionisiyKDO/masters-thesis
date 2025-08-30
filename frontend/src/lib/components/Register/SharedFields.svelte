@@ -1,5 +1,8 @@
 <script lang="ts">
-    export let formData: any;
+	import type { FormData } from "$lib/types";
+
+    interface Props { formData: FormData }
+    let { formData = $bindable() }: Props = $props()
 </script>
 
 <div class="flex gap-2">

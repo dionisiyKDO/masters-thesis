@@ -1,10 +1,13 @@
 <script lang="ts">
-    export let formData: any;
+	import type { FormData } from "$lib/types";
+
+    interface Props { formData: FormData }
+    let { formData = $bindable() }: Props = $props()
 </script>
 
 
 <input
-    bind:value={formData.license_number}
+    bind:value={formData.doctor_profile!.license_number}
     placeholder="Medical License Number"
     name="license_number"
     class="input"
@@ -12,8 +15,8 @@
 />
 
 <input
-    bind:value={formData.specialization}
-    placeholder="Specialization (e.g., Cardiology, Neurology)"
+    bind:value={formData.doctor_profile!.specialization}
+    placeholder="Specialization"
     name="specialization"
     class="input"
     required
