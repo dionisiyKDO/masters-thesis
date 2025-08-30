@@ -1,5 +1,4 @@
 import { refreshAccessToken } from '$lib/auth';
-import { type MedicalCase } from './types';
 
 const BASE_URL = 'http://localhost:8000/api';
 
@@ -79,7 +78,3 @@ export default {
 
     uploadFile,
 };
-
-
-
-
