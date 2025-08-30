@@ -16,6 +16,7 @@ results/
 augment.py
 redistribute.py
 test-1.py
+backend/media/scans/*
 
 backend/static/frontend/
 backend/staticfiles/
