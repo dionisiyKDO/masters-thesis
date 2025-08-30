@@ -3,14 +3,30 @@
 	import PatientFields from '$lib/components/Register/PatientFields.svelte';
 	import SharedFields from '$lib/components/Register/SharedFields.svelte';
 	import { handleSubmit } from './load';
+	import type { FormData } from '$lib/types';
 
 	import { fade, fly } from 'svelte/transition';
 	import { cubicOut } from 'svelte/easing';
 
 	let step = $state(1);
-	let role: 'doctor' | 'patient' | '' = $state('');
-	let formData: any = $state({});
-	$inspect(formData)
+	let formData: FormData = $state({
+		username: '',
+		password: '',
+		role: 'patient',
+		email: '',
+		first_name: '',
+		last_name: '',
+		doctor_profile: {
+			specialization: '',
+			license_number: ''
+		},
+		patient_profile: {
+			dob: '',
+			sex: '',
+			medical_record_number: '',
+			contact_info: ''
+		}
+	});
 
 	// Animation configuration
 	const transitionConfig = {
@@ -21,7 +37,7 @@
 
 <div class="flex flex-1 items-center justify-center p-4">
 	<div class="card w-full max-w-md">
-		<form onsubmit={handleSubmit} class="relative min-h-[620px]">
+		<form onsubmit={() => {handleSubmit(formData)}} class="relative min-h-[620px]">
 			<!-- Step 1: Basic Info -->
 			{#if step === 1}
 				<div
@@ -39,7 +55,7 @@
 
 						<input class="input" type="password" placeholder="Password" name="password" bind:value={formData.password} required />
 
-						<select class="input" bind:value={role} name="role" required>
+						<select class="input" bind:value={formData.role} name="role" required>
 							<option value="" disabled>Select your role</option>
 							<option value="doctor">Doctor</option>
 							<option value="patient">Patient</option>
@@ -49,8 +65,8 @@
 					<div class="pt-6">
 						<button
 							type="button"
-							onclick={() => role && (step = 2)}
-							disabled={!role}
+							onclick={() => formData.role && (step = 2)}
+							disabled={!formData.role}
 							class="button w-full"
 						>
 							Continue
@@ -68,7 +84,7 @@
 				>
 					<div class="mb-8 text-center">
 						<h1 class="text-foreground mb-2 text-2xl font-bold">
-							{role === 'doctor' ? 'Doctor Profile' : 'Patient Profile'}
+							{formData.role === 'doctor' ? 'Doctor Profile' : 'Patient Profile'}
 						</h1>
 						<p class="text-muted-foreground text-sm">Complete your profile information</p>
 					</div>
@@ -77,9 +93,9 @@
 						
 						<SharedFields bind:formData />
 
-						{#if role === 'doctor'}
+						{#if formData.role === 'doctor'}
 							<DoctorFields bind:formData />
-						{:else if role === 'patient'}
+						{:else if formData.role === 'patient'}
 							<PatientFields bind:formData />
 						{/if}
 					</div>
