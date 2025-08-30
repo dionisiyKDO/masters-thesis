@@ -1,17 +1,19 @@
 import { goto } from '$app/navigation';
-import { user, login } from '$lib/auth';
+import { login, register } from '$lib/auth';
+import type { FormData } from '$lib/types';
 
-export async function handleSubmit(event: Event) {
-	event.preventDefault();
+export async function handleSubmit(formData: FormData) {
+	if (formData.role === 'doctor') {
+		formData.patient_profile = undefined;
+	} else if (formData.role === 'patient') {
+		formData.doctor_profile = undefined;
+	}
 
-	const form = event.target as HTMLFormElement;
-	
-	// const username = form.username.value;
-	// const password = form.password.value;
-
-	// login(username, password).then((success) => {
-	// 	if (success) {
-	// 		goto('/');
-	// 	}
-	// });
+	register(formData).then((success) => {
+		if (success) {
+			login(formData.username, formData.password).then((loginSuccess) => {
+				if (loginSuccess) goto('/');
+			});
+		}
+	});
 }
