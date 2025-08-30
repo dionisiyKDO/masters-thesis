@@ -26,14 +26,20 @@ class RegisterSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', 'role', 'doctor_profile', 'patient_profile')
+        fields = ('id', 'username', 'email', 'first_name', 'last_name','password', 'role', 'doctor_profile', 'patient_profile')
         extra_kwargs = {"password": {"write_only": True}}
+
+    def to_internal_value(self, data):
+        # print("Incoming raw data:", data)  # <-- shows exactly what DRF got from request
+        return super().to_internal_value(data)
 
     def validate(self, data):
         """
         Check that profile data is provided for the selected role.
         """
         role = data.get('role')
+        if role == 'admin':
+            raise serializers.ValidationError({"role": "Admin role cannot be assigned via registration."})
         if role == 'doctor' and 'doctor_profile' not in data:
             raise serializers.ValidationError({"doctor_profile": "This field is required for doctors."})
         if role == 'patient' and 'patient_profile' not in data:
@@ -44,14 +50,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         doctor_data = validated_data.pop('doctor_profile', None)
         patient_data = validated_data.pop('patient_profile', None)
+        password = validated_data.pop("password")
         
-        user = User.objects.create_user(
-            username=validated_data['username'],
-            email=validated_data['email'],
-            password=validated_data['password'],
-            role=validated_data.get("role", "patient"),  # default patient
-            is_staff=(True if validated_data.get("role") == "admin" else False)  # admin -> is_staff
-        )
+        user = User(**validated_data)
+        user.set_password(password) # explicitly hashing the password
+        user.save()
 
         # Create the corresponding profile based on the role
         if validated_data['role'] == 'doctor' and doctor_data:
