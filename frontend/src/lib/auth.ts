@@ -1,10 +1,9 @@
 import { goto } from '$app/navigation';
 import { writable } from 'svelte/store';
-import type { LocalUser as User, LoginResponse } from '$lib/types';
+import type { LocalUser as User, LoginResponse, FormData } from '$lib/types';
 
 export const user = writable<User | null>(null);
 
-// Function to log in
 export async function login(username: string, password: string): Promise<boolean> {
 	try {
 		const isStandalone = window.location.port !== '8000';
@@ -21,9 +20,9 @@ export async function login(username: string, password: string): Promise<boolean
 
 		if (!response.ok) {
 			const data = await response.json();
-			const error = data.error || 'Failed to fetch user info';
+			const error = data.error || 'Failed to login';
 			console.log(error);
-			return false; // Login failed
+			return false;
 		}
 
 		const data = (await response.json()) as LoginResponse;
@@ -56,7 +55,6 @@ export async function login(username: string, password: string): Promise<boolean
 	}
 }
 
-// Function to refresh the access token
 export async function refreshAccessToken(): Promise<string | null> {
 	const refreshToken = localStorage.getItem('refresh_token');
 	if (!refreshToken) {
@@ -96,7 +94,6 @@ export async function refreshAccessToken(): Promise<string | null> {
 	}
 }
 
-// Function to initialize the token from localStorage
 export function initializeToken(): void {
 	const storedAccessToken = localStorage.getItem('access_token');
 	const storedRefreshToken = localStorage.getItem('refresh_token');
@@ -115,7 +112,6 @@ export function initializeToken(): void {
 	}
 }
 
-// Function to log out
 export function logout(): void {
     localStorage.removeItem('access_token');
     localStorage.removeItem('refresh_token');
@@ -124,4 +120,32 @@ export function logout(): void {
     localStorage.removeItem('user_id');
     user.set(null);
     goto('/');
+}
+
+export async function register(formData: FormData): Promise<boolean> {
+	try {
+		const isStandalone = window.location.port !== '8000';
+		const apiBase = isStandalone ? 'http://localhost:8000' : '';
+		const request_link = `${apiBase}/api/auth/register/`
+
+		const response = await fetch(request_link, {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ ...formData })
+		});
+
+		console.log("Making request to: ", request_link);
+
+		if (!response.ok) {
+			const data = await response.json();
+			const error = data.error || 'Failed to register user';
+			console.log(error);
+			return false;
+		}
+
+		return true;
+	} catch (error) {
+		console.error('Error during login:', error);
+		return false;
+	}
 }
