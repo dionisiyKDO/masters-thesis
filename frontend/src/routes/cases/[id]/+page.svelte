@@ -8,6 +8,7 @@
 	let { data } = $props();
     const caseId = data.caseId;
 	let selectedScan: ChestScan | null = $state(null);
+    let refetchTrigger = $state(0); // Simple trigger to force refetch
     $inspect(selectedScan)
 
 	async function fetchCaseDetail(): Promise<MedicalCaseDetail | null> {
@@ -15,7 +16,10 @@
             const response = await api.get(`/cases/${caseId}/`);
 			if (!response.ok) throw new Error('Failed to fetch case details.');
             const data: MedicalCaseDetail = await response.json();
-            selectedScan = data.scans[0];
+            // Auto-select logic
+            if (!selectedScan && data.scans.length > 0) {
+                selectedScan = data.scans[0];
+            }
 			return data
 		} catch (err) {
 			console.log(err);
@@ -29,8 +33,21 @@
         return formatedDate.toLocaleDateString() + '\n' + formatedDate.toLocaleTimeString();
     }
 
-	// Request
-	let caseDetailReq: Promise<MedicalCaseDetail | null> = fetchCaseDetail();
+
+    // Reactive request that refetches when trigger changes
+    $effect(() => {
+        refetchTrigger; // Subscribe to trigger
+        caseDetailReq = fetchCaseDetail();
+    });
+
+    // Initial request
+    let caseDetailReq: Promise<MedicalCaseDetail | null> = $state(fetchCaseDetail());
+
+    // Refetch function to call from child components
+    function refetchCase() {
+        refetchTrigger++; // This will trigger the $effect above
+        selectedScan = null; // Reset selection to show the new scan
+    }
 </script>
 
 {#await caseDetailReq}
@@ -39,6 +56,7 @@
 	{#if caseDetail}
         <div class="space-y-6">
 
+            <!-- Top overview -->
             <div class="p-6 bg-card rounded-lg shadow-md border border-border mb-6">
                 <a href="/" class="text-primary hover:underline mb-4 inline-block">&larr; Back to Dashboard</a>
                 <h1 class="text-3xl font-bold text-card-foreground">{caseDetail.title}</h1>
@@ -93,10 +111,7 @@
                     {#if selectedScan}
                         <ScanDetail scan={selectedScan} />
                     {:else if $user?.role === "doctor"}
-                        <ScanForm caseId={caseId} onUploaded={(newScan: any) => {
-                            caseDetail.scans = [...caseDetail.scans, newScan];
-                            selectedScan = newScan;
-                        }} />
+                        <ScanForm caseId={caseId} onUploaded={refetchCase} />
                     {:else}
                         <p class="text-muted-foreground">Select a scan to view details.</p>
                     {/if}

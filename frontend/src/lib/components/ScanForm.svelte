@@ -15,8 +15,7 @@
 			formData.append('image', file);
 			const response = await api.uploadFile(`/cases/${caseId}/scans/upload/`, file);
 			if (!response.ok) throw new Error('Upload failed.');
-			const data = await response.json();
-			onUploaded(data);
+			onUploaded();
 		} catch (err) {
 			console.log(err);
 			return;

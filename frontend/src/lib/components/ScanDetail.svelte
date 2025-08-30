@@ -53,7 +53,7 @@
 	</div>
 
 	<!-- AI Predictions -->
-	{#if scan.ai_analyses.length > 0}
+	{#if scan.ai_analyses && scan.ai_analyses.length > 0}
 		<h4 class="font-semibold ml-2 mb-0">AI Analyses</h4>
 		<div class="grid grid-cols-2 gap-4">
 			{#each scan.ai_analyses as analysis}
@@ -78,7 +78,7 @@
 	{/if}
 
 	<!-- Doctor annotations -->
-	{#if scan.annotations.length > 0}
+	{#if scan.annotations && scan.annotations.length > 0}
 		<h4 class="font-semibold ml-2 mb-0">Doctor annotations</h4>
 		<div class="grid grid-cols-2 gap-4">
 			{#each scan.annotations as annotation}
