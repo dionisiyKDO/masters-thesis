@@ -1,6 +1,7 @@
 from rest_framework import serializers
 from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation
 from users.serializers import UserSerializer
+from users.models import User
 
 # Nested Serializers for Detailed Views
 class ModelVersionSerializer(serializers.ModelSerializer):
@@ -18,11 +19,31 @@ class AIAnalysisSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class DoctorAnnotationSerializer(serializers.ModelSerializer):
+    # When reading
+    # expose doctor as full table
+    # expose scan as plain integer id
     doctor = UserSerializer(read_only=True)
+    scan = serializers.IntegerField(source='scan.id', read_only=True)
+    
+    doctor_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), source='doctor', write_only=True
+    )
+    scan_id = serializers.PrimaryKeyRelatedField(
+        queryset=ChestScan.objects.all(), source='scan', write_only=True
+    )
+    # On write, you pass doctor_id: 1, scan_id: 42. 
+    # DRF will auto-resolve them into User and ChestScan objects.
+    
+    # On read, you get the full doctor object (via UserSerializer) 
+    # and just IDs for doctor_id / scan_id.
 
     class Meta:
         model = DoctorAnnotation
-        fields = '__all__'
+        fields = ['id', 'notes', 'doctor', 'doctor_id', 'scan', 'scan_id', 'created_at']
+        
+    def to_internal_value(self, data):
+        print("Incoming raw data:", data)  # <-- shows exactly what DRF got from request
+        return super().to_internal_value(data)
 
 class ChestScanSerializer(serializers.ModelSerializer):
     # When reading a scan, nest its analyses and annotations
