@@ -236,6 +236,7 @@ class Command(BaseCommand):
                     primary_doctor=primary_doctor,
                     title=f"{random.choice(case_titles)} - {patient.get_full_name()}",
                     description=fake.paragraph(nb_sentences=3),
+                    diagnosis_summary=random.choice(["", fake.paragraph(nb_sentences=2)]), # Some cases have no diagnosis yet
                     status=random.choice(case_statuses)
                 )
 
