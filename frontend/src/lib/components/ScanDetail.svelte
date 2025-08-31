@@ -2,6 +2,7 @@
 	import type { ChestScan } from "$lib/types"
     import { user } from '$lib/auth.js';
 	import api from "$lib/api";
+	import { slide } from "svelte/transition";
 
 	let { scan }: { scan: ChestScan } = $props();
 	const API_BASE = 'http://localhost:8000';
@@ -105,68 +106,63 @@
 	{/if}
 
 	<!-- Doctor annotations -->
-	{#if scan.annotations && scan.annotations.length > 0}
-		<!-- Header + Button -->
-		<div class="flex justify-between">
-			<h4 class="font-semibold ml-2 mb-0">Doctor annotations</h4>
-			{#if $user?.role === "doctor"}
-				<button 
-					class="button px-3 py-0.5"
-					onclick={() => adding = !adding}
-				>
-					{adding ? "Cancel" : "Add annotation"}
-				</button>
-			{/if}
+	{#if $user?.role === "doctor"}
+		<div class="flex justify-between mb-2">
+			<h4 class="font-semibold ml-2 mb-0">Add annotations</h4>
+			<button 
+				class="button px-3 py-0.5"
+				onclick={() => adding = !adding}
+			>
+				{adding ? "Cancel" : "Add annotation"}
+			</button>
 		</div>
 
-		<!-- Add annotations form -->
 		{#if adding}
-			<div class="mt-2">
+			<div class="mb-2 p-3 bg-muted/50 rounded-lg border border-dashed" transition:slide={{ duration: 300 }}>
 				<textarea
 					bind:value={newAnnotation}
-					placeholder="Write your notes..."
-					class="w-full p-2 border rounded bg-background"
+					placeholder="Enter your medical notes and observations..."
+					rows="3"
+					class="w-full p-3 border border-border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary bg-background"
 				></textarea>
-				<button
-					class="button px-3 py-0.5"
-					onclick={handleAddAnnotation}
-				>
-					Save
-				</button>
+				<div class="flex justify-end gap-2 mt-2">
+					<button
+						class="px-3 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
+						onclick={() => {adding = false; newAnnotation = "";}}
+					>
+						Cancel
+					</button>
+					<button
+						class="px-4 py-1 button"
+						onclick={handleAddAnnotation}
+						disabled={!newAnnotation.trim()}
+					>
+						Save Annotation
+					</button>
+				</div>
 			</div>
 		{/if}
+	{/if}
 
 
-		<!-- Annotations -->
-		<div class="grid grid-cols-2 gap-4">
+
+	{#if scan.annotations && scan.annotations.length > 0}
+		<h4 class="font-semibold ml-2 mb-0">Doctor annotations</h4>
+		<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
 			{#each scan.annotations as annotation}
-				<div class="bg-secondary p-4 rounded-md border">
-					
-					<p class="text-secondary-foreground italic">
-						“{annotation.notes}”
+				<div class="bg-secondary text-secondary-foreground p-4 rounded-md border">
+					<p class="italic">
+						"{annotation.notes}"
 					</p>
-					<p class="text-xs text-secondary-foreground text-right mt-2">
-						– Dr. {annotation.doctor.username},
+					<p class="text-xs text-right mt-2">
+						– Dr. {annotation.doctor.first_name} {annotation.doctor.last_name},
 						{new Date(annotation.created_at).toLocaleDateString()}
 					</p>
 				</div>
 			{/each}
 		</div>
 	{:else}
-
-		<!-- No annotations yet -->
-		<h4 class="font-semibold ml-2 mb-2">Doctor annotations - no</h4>
-		<!-- {#if $user?.role === "doctor"}
-			<div class="p-4 border border-dashed rounded bg-muted text-muted-foreground">
-				<p>No annotations yet.</p>
-				<button
-					class="mt-2 px-3 py-1 bg-primary text-primary-foreground rounded"
-					onclick={() => adding = true}>
-					Add first annotation
-				</button>
-			</div>
-		{:else}
-			<p class="text-muted-foreground italic">No annotations available</p>
-		{/if} -->
+		<h4 class="font-semibold ml-2 mb-3">Doctor Annotations</h4>
+		<p class="text-center py-2 text-muted-foreground">No annotations available</p>
 	{/if}
 </div>
