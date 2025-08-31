@@ -1,8 +1,35 @@
 <script lang="ts">
 	import type { ChestScan } from "$lib/types"
+    import { user } from '$lib/auth.js';
+	import api from "$lib/api";
 
 	let { scan }: { scan: ChestScan } = $props();
 	const API_BASE = 'http://localhost:8000';
+	let adding = $state(false);
+	let newAnnotation = $state("");
+	$inspect(scan)
+
+	async function handleAddAnnotation() {
+		try {
+			if (!newAnnotation.trim()) return;
+			const body = {
+				doctor_id: $user?.id,
+				scan_id: scan.id,
+				notes: newAnnotation,
+			};
+			const response = await api.post('/annotations/', body);
+			if (!response.ok) throw new Error('Failed to create annotation.');
+			const data = await response.json();
+			scan.annotations = [...scan.annotations, data];
+			newAnnotation = "";
+			adding = false;
+			
+			return data
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
+	}
 
     // Helper function
     function formatDate(date: string) {
@@ -79,20 +106,67 @@
 
 	<!-- Doctor annotations -->
 	{#if scan.annotations && scan.annotations.length > 0}
-		<h4 class="font-semibold ml-2 mb-0">Doctor annotations</h4>
+		<!-- Header + Button -->
+		<div class="flex justify-between">
+			<h4 class="font-semibold ml-2 mb-0">Doctor annotations</h4>
+			{#if $user?.role === "doctor"}
+				<button 
+					class="button px-3 py-0.5"
+					onclick={() => adding = !adding}
+				>
+					{adding ? "Cancel" : "Add annotation"}
+				</button>
+			{/if}
+		</div>
+
+		<!-- Add annotations form -->
+		{#if adding}
+			<div class="mt-2">
+				<textarea
+					bind:value={newAnnotation}
+					placeholder="Write your notes..."
+					class="w-full p-2 border rounded bg-background"
+				></textarea>
+				<button
+					class="button px-3 py-0.5"
+					onclick={handleAddAnnotation}
+				>
+					Save
+				</button>
+			</div>
+		{/if}
+
+
+		<!-- Annotations -->
 		<div class="grid grid-cols-2 gap-4">
 			{#each scan.annotations as annotation}
-			<div class="bg-secondary p-4 rounded-md border">
-				
-				<p class="text-secondary-foreground italic">
-					“{annotation.notes}”
-				</p>
-				<p class="text-xs text-secondary-foreground text-right mt-2">
-					– Dr. {annotation.doctor.username},
-					{new Date(annotation.created_at).toLocaleDateString()}
-				</p>
-			</div>
+				<div class="bg-secondary p-4 rounded-md border">
+					
+					<p class="text-secondary-foreground italic">
+						“{annotation.notes}”
+					</p>
+					<p class="text-xs text-secondary-foreground text-right mt-2">
+						– Dr. {annotation.doctor.username},
+						{new Date(annotation.created_at).toLocaleDateString()}
+					</p>
+				</div>
 			{/each}
 		</div>
+	{:else}
+
+		<!-- No annotations yet -->
+		<h4 class="font-semibold ml-2 mb-2">Doctor annotations - no</h4>
+		<!-- {#if $user?.role === "doctor"}
+			<div class="p-4 border border-dashed rounded bg-muted text-muted-foreground">
+				<p>No annotations yet.</p>
+				<button
+					class="mt-2 px-3 py-1 bg-primary text-primary-foreground rounded"
+					onclick={() => adding = true}>
+					Add first annotation
+				</button>
+			</div>
+		{:else}
+			<p class="text-muted-foreground italic">No annotations available</p>
+		{/if} -->
 	{/if}
 </div>
