@@ -108,7 +108,7 @@ class ScanUploadView(APIView):
         # label, confidence, heatmap_path, model_name = classifier.predict(scan.image.path)
         logger.info(f"Prediction complete: {predicted_class} with confidence {confidence:.4f}")
         # 3. Save analysis
-        model_version = ModelVersion.objects.get(model_name='PneumoDetect_v1.0')
+        model_version = ModelVersion.objects.get(model_name='OwnV3')
         AIAnalysis.objects.create(
             scan=scan,
             prediction_label=predicted_class,
