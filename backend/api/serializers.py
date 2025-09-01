@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation
+from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult
 from users.serializers import UserSerializer
 from users.models import User
 
@@ -16,6 +16,14 @@ class AIAnalysisSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = AIAnalysis
+        fields = '__all__'
+
+class EnsembleResultSerializer(serializers.ModelSerializer):
+    # Include the individual analyses that made up this ensemble
+    source_analyses = AIAnalysisSerializer(many=True, read_only=True)    
+    
+    class Meta:
+        model = EnsembleResult
         fields = '__all__'
 
 class DoctorAnnotationSerializer(serializers.ModelSerializer):
@@ -46,10 +54,15 @@ class DoctorAnnotationSerializer(serializers.ModelSerializer):
         return super().to_internal_value(data)
 
 class ChestScanSerializer(serializers.ModelSerializer):
-    # When reading a scan, nest its analyses and annotations
+    # Individual AI analyses
     ai_analyses = AIAnalysisSerializer(many=True, read_only=True)
+    
+    # Ensemble result (OneToOne relationship)
+    ensemble_result = EnsembleResultSerializer(read_only=True)
+    
+    # Doctor annotations
     annotations = DoctorAnnotationSerializer(many=True, read_only=True)
-
+        
     class Meta:
         model = ChestScan
         fields = '__all__'
