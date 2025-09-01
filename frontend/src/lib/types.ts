@@ -68,6 +68,15 @@ export interface DoctorAnnotation {
     scan: number;
     doctor: SimpleUser;
 }
+export interface Ensemble {
+    id: number;
+    source_analyses: AIAnalysis[];
+    method: 'majority_vote' | 'average' | 'weighted';
+    combined_prediction_label: 'pneumonia' | 'normal';
+    combined_confidence_score: number;
+    created_at: string;
+    scan: number;
+}
 
 export interface ChestScan {
     id: number;
@@ -76,6 +85,7 @@ export interface ChestScan {
     case: number;
     ai_analyses: AIAnalysis[];
     annotations: DoctorAnnotation[];
+    ensemble_result: Ensemble;
 }
 
 export interface MedicalCase {
