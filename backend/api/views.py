@@ -7,7 +7,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
 
 from rest_framework import viewsets, permissions
-from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult, EnsembleResultModel
+from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult
 from .serializers import (
     MedicalCaseSerializer, MedicalCaseDetailSerializer, ChestScanSerializer,
     ModelVersionSerializer, AIAnalysisSerializer, DoctorAnnotationSerializer,
@@ -109,7 +109,7 @@ class ScanUploadView(APIView):
                     img_size=config['img_size'],
                     data_dir='./api/classifier/data'
                 )
-                classifier.load_model('.' + model_version.storage_uri) # '.' temporary seeding problem workaround
+                classifier.load_model(model_version.storage_uri)
                 predicted_class, confidence, probabilities = classifier.predict(scan.image_path.path)
                 
                 # Save individual prediction
@@ -160,14 +160,8 @@ class ScanUploadView(APIView):
             combined_prediction_label=final_label,
             combined_confidence_score=final_conf,
         )
-
-        # Save relations with weights
-        for model_version, weight in zip(used_models, weights):
-            EnsembleResultModel.objects.create(
-                ensemble_result=ensemble,
-                model_version=model_version,
-                weight=float(weight),
-            )
+        
+        ensemble.source_analyses.set(AIAnalysis.objects.filter(scan=scan))
 
         return Response({"message": "Upload + classification + ensemble successful"}, status=status.HTTP_201_CREATED)      
 
