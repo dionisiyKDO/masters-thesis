@@ -71,6 +71,35 @@ class AIAnalysis(models.Model):
     def __str__(self):
         return f"Analysis {self.id} - {self.prediction_label} ({self.confidence_score:.2f})"
 
+class EnsembleResult(models.Model):
+    METHODS = [
+        ("majority_vote", "Majority Vote"),
+        ("average", "Average"),
+        ("weighted", "Weighted"),
+        ("stacking", "Stacking"),
+    ]
+    
+    LABEL_CHOICES = [
+        ('pneumonia', 'Pneumonia'),
+        ('normal', 'Normal'),
+    ]
+    
+    scan = models.OneToOneField(ChestScan, on_delete=models.CASCADE, related_name="ensemble_result")
+        
+    method = models.CharField(max_length=50, choices=METHODS)
+    combined_prediction_label = models.CharField(max_length=20, choices=LABEL_CHOICES)
+    combined_confidence_score = models.FloatField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    # Simple many-to-many - no through model, no weights
+    source_analyses = models.ManyToManyField(
+        AIAnalysis,
+        related_name="used_in_ensembles"
+    )
+    
+    def __str__(self):
+        return f"Ensemble {self.id} - {self.combined_prediction_label} ({self.combined_confidence_score:.2f})"
+
 
 class DoctorAnnotation(models.Model):
     scan = models.ForeignKey(ChestScan, on_delete=models.CASCADE, related_name="annotations")
@@ -90,33 +119,3 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"[{self.created_at}] {self.user} - {self.action}"
-
-class EnsembleResult(models.Model):
-    METHODS = [
-        ("majority_vote", "Majority Vote"),
-        ("average", "Average"),
-        ("weighted", "Weighted"),
-        ("stacking", "Stacking"),
-    ]
-    LABEL_CHOICES = [
-        ('pneumonia', 'Pneumonia'),
-        ('normal', 'Normal'),
-    ]
-    
-    scan = models.ForeignKey(ChestScan, on_delete=models.CASCADE, related_name='ensemble_result')
-    
-    method = models.CharField(max_length=50, choices=METHODS)
-    combined_prediction_label = models.CharField(max_length=20, choices=LABEL_CHOICES)
-    combined_confidence_score = models.FloatField()
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    models = models.ManyToManyField(
-        ModelVersion,
-        through="EnsembleResultModel",
-        related_name="ensemble_results"
-    )
-    
-class EnsembleResultModel(models.Model):
-    ensemble_result = models.ForeignKey(EnsembleResult, on_delete=models.CASCADE)
-    model_version = models.ForeignKey(ModelVersion, on_delete=models.CASCADE)
-    weight = models.FloatField(default=1.0)
