@@ -94,33 +94,78 @@
 					</svg>
 					AI Analysis Results
 				</h4>
-				<div class="grid grid-cols-2 md:grid-cols-3 gap-4">
-					{#each scan.ai_analyses as analysis}
-						<div class="bg-muted rounded-md border border-border px-4 py-3">
-							<div class="flex flex-col items-start mb-1">		
-								<div>
-									<span class="font-bold">Label:</span>
-									<span class="capitalize px-2 py-1 rounded bg-input text-foreground text-sm">
-										{analysis.prediction_label}
-									</span>
-								</div>
-								<div>
-									<span class="font-bold">Confidence:</span>
-									{(analysis.confidence_score * 100).toFixed(2)}%
-								</div>
+
+				<!-- Ensemble Result (Featured) -->
+				{#if scan.ensemble_result}
+					<div class="bg-gradient-to-r from-primary/10 to-primary/5 rounded-lg border-2 border-primary/20 p-4 mb-4">
+						<div class="flex items-center gap-2 mb-3">
+							<span class="font-semibold text-primary">Ensemble Prediction</span>
+							<span class="text-xs bg-primary/20 text-primary px-3 py-1 rounded-full font-medium">
+								Combined Analysis
+							</span>
+						</div>
+						<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+							<div class="flex flex-col">
+								<span class="text-sm font-medium text-muted-foreground">Final Diagnosis</span>
+								<span class="text-lg font-bold capitalize text-primary">
+									{scan.ensemble_result.combined_prediction_label}
+								</span>
 							</div>
-							<div class="space-y text-sm text-muted-foreground">
-								<div class="flex justify-between">
-									<span class="font-medium">Model:</span>
-									<span class="text-xs">{analysis.model_version.model_name}</span>
-								</div>
-								<div class="flex justify-between">
-									<span class="font-medium">Generated:</span>
-									<span class="text-xs">{new Date(analysis.generated_at).toLocaleDateString()}</span>
-								</div>
+							<div class="flex flex-col">
+								<span class="text-sm font-medium text-muted-foreground">Combined Confidence</span>
+								<span class="text-lg font-bold text-primary">
+									{(scan.ensemble_result.combined_confidence_score * 100).toFixed(2)}%
+								</span>
+							</div>
+							<div class="flex flex-col">
+								<span class="text-sm font-medium text-muted-foreground">Method</span>
+								<span class="text-sm font-medium capitalize text-foreground">
+									{scan.ensemble_result.method} Average
+								</span>
 							</div>
 						</div>
-					{/each}
+						<div class="mt-3 text-xs text-muted-foreground">
+							Combined result from {scan.ensemble_result.source_analyses.length} models • 
+							Generated on {formatDate(scan.ensemble_result.created_at)}
+						</div>
+					</div>
+				{/if}
+
+				<!-- Individual Model Results -->
+				<div class="space-y-1">
+					<h5 class="text-xs font-medium text-muted-foreground uppercase tracking-wide ml-5">
+						Individual Model Predictions
+					</h5>
+					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+						{#each scan.ai_analyses as analysis}
+							<div class="bg-muted rounded-md border border-border px-4 py-3">
+								<div class="flex flex-col mb-2">		
+									<div class="flex items-center justify-between">
+										<span class="font-bold">Prediction:</span>
+										<span class="capitalize px-2 py-1 rounded bg-input text-foreground text-sm font-medium">
+											{analysis.prediction_label}
+										</span>
+									</div>
+									<div class="flex items-center justify-between">
+										<span class="font-bold">Confidence:</span>
+										<span class="font-bold text-foreground">
+											{(analysis.confidence_score * 100).toFixed(2)}%
+										</span>
+									</div>
+								</div>
+								<div class="space-y text-sm text-muted-foreground">
+									<div class="flex justify-between">
+										<span class="font-medium">Model:</span>
+										<span class="text-xs">{analysis.model_version.model_name}</span>
+									</div>
+									<div class="flex justify-between">
+										<span class="font-medium">Generated:</span>
+										<span class="text-xs">{new Date(analysis.generated_at).toLocaleDateString()}</span>
+									</div>
+								</div>
+							</div>
+						{/each}
+					</div>
 				</div>
 			</div>
 		{/if}
