@@ -90,3 +90,33 @@ class AuditLog(models.Model):
 
     def __str__(self):
         return f"[{self.created_at}] {self.user} - {self.action}"
+
+class EnsembleResult(models.Model):
+    METHODS = [
+        ("majority_vote", "Majority Vote"),
+        ("average", "Average"),
+        ("weighted", "Weighted"),
+        ("stacking", "Stacking"),
+    ]
+    LABEL_CHOICES = [
+        ('pneumonia', 'Pneumonia'),
+        ('normal', 'Normal'),
+    ]
+    
+    scan = models.ForeignKey(ChestScan, on_delete=models.CASCADE, related_name='ensemble_result')
+    
+    method = models.CharField(max_length=50, choices=METHODS)
+    combined_prediction_label = models.CharField(max_length=20, choices=LABEL_CHOICES)
+    combined_confidence_score = models.FloatField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    models = models.ManyToManyField(
+        ModelVersion,
+        through="EnsembleResultModel",
+        related_name="ensemble_results"
+    )
+    
+class EnsembleResultModel(models.Model):
+    ensemble_result = models.ForeignKey(EnsembleResult, on_delete=models.CASCADE)
+    model_version = models.ForeignKey(ModelVersion, on_delete=models.CASCADE)
+    weight = models.FloatField(default=1.0)
