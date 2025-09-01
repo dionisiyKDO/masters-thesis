@@ -9,7 +9,7 @@ from django.db import transaction
 from users.models import User, DoctorProfile, PatientProfile
 from api.models import (
     MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation,
-    EnsembleResult, EnsembleResultModel
+    EnsembleResult
 )
 
 # --- Configuration ---
@@ -70,42 +70,42 @@ MODELS = [
     },
     {
         "name": "VGG16",
-        "uri": "/checkpoints/Saved/VGG16.epoch18-val_acc0.9534.hdf5",
+        "uri": "./checkpoints/Saved/VGG16.epoch18-val_acc0.9534.hdf5",
         "desc": "VGG16 based model, similar performance to InceptionV3 but slower inference.",
         "metrics": {"accuracy": 0.9534, "f1_score": 0.86, "precision": 0.87},
         "active": True
     },
     {
         "name": "VGG19",
-        "uri": "/checkpoints/Saved/VGG19.epoch29-val_acc0.9489.hdf5",
+        "uri": "./checkpoints/Saved/VGG19.epoch29-val_acc0.9489.hdf5",
         "desc": "VGG19 based model with slightly lower accuracy than VGG16.",
         "metrics": {"accuracy": 0.9489, "f1_score": 0.85, "precision": 0.86},
         "active": True
     },
     # {
     #     "name": "InceptionV3",
-    #     "uri": "/checkpoints/Saved/InceptionV3.epoch13-val_acc0.9545.hdf5",
+    #     "uri": "./checkpoints/Saved/InceptionV3.epoch13-val_acc0.9545.hdf5",
     #     "desc": "Transfer learning model using InceptionV3 as base. Good balance of speed and accuracy.",
     #     "metrics": {"accuracy": 0.9545, "f1_score": 0.87, "precision": 0.88},
     #     "active": True
     # },
     # {
     #     "name": "EfficientNetV2",
-    #     "uri": "/checkpoints/Saved/EfficientNetV2.epoch01-val_acc0.7295.hdf5",
+    #     "uri": "./checkpoints/Saved/EfficientNetV2.epoch01-val_acc0.7295.hdf5",
     #     "desc": "Early experiment with EfficientNetV2. Underperformed compared to others.",
     #     "metrics": {"accuracy": 0.7295, "f1_score": 0.65, "precision": 0.66},
     #     "active": False # An older, inactive model
     # },
     # {
     #     "name": "ResNet50",
-    #     "uri": "/checkpoints/Saved/ResNet50.epoch22-val_acc0.8818.hdf5",
+    #     "uri": "./checkpoints/Saved/ResNet50.epoch22-val_acc0.8818.hdf5",
     #     "desc": "ResNet50 based model with moderate performance.",
     #     "metrics": {"accuracy": 0.8818, "f1_score": 0.75, "precision": 0.76},
     #     "active": True
     # },
     # {
     #     "name": "InceptionResNetV2",
-    #     "uri": "/checkpoints/Saved/InceptionResNetV2.epoch16-val_acc0.9409.hdf5",
+    #     "uri": "./checkpoints/Saved/InceptionResNetV2.epoch16-val_acc0.9409.hdf5",
     #     "desc": "High capacity model with InceptionResNetV2 backbone. Computationally intensive.",
     #     "metrics": {"accuracy": 0.9409, "f1_score": 0.84, "precision": 0.85},
     #     "active": True
@@ -147,7 +147,6 @@ class Command(BaseCommand):
 
     # ---------------------
     def _clear_db(self):
-        EnsembleResultModel.objects.all().delete()
         EnsembleResult.objects.all().delete()
         AIAnalysis.objects.all().delete()
         DoctorAnnotation.objects.all().delete()
@@ -305,11 +304,8 @@ class Command(BaseCommand):
                 combined_prediction_label=label,
                 combined_confidence_score=conf,
             )
-
-            # Link models
-            for analysis in analyses:
-                EnsembleResultModel.objects.create(
-                    ensemble_result=ensemble,
-                    model_version=analysis.model_version,
-                    weight=round(random.uniform(0.5, 1.5), 2),
-                )
+            
+            # Many-to-many fields require the parent object to exist in the database first (needs a primary key)
+            # During create(), the object doesn't have a PK yet
+            # So you create the object first, then use .set() to establish the M2M relationships
+            ensemble.source_analyses.set(analyses)
