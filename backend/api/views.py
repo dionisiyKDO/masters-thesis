@@ -7,13 +7,15 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
 
 from rest_framework import viewsets, permissions
-from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation
+from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult, EnsembleResultModel
 from .serializers import (
     MedicalCaseSerializer, MedicalCaseDetailSerializer, ChestScanSerializer,
-    ModelVersionSerializer, AIAnalysisSerializer, DoctorAnnotationSerializer
+    ModelVersionSerializer, AIAnalysisSerializer, DoctorAnnotationSerializer,
 )
 from .permissions import IsAdminOrReadOnly, IsDoctor, IsPatientOfCase, IsDoctorOfCase
-from .classifier import Classifier
+from .classifier.classifier import Classifier
+from .classifier.config import config_v1 as config
+import numpy as np
 
 #region Env Setup
 import warnings
@@ -85,39 +87,89 @@ class ScanUploadView(APIView):
         if not file:
             return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
         
-        # TODO: save file to model / storage
-        # example: Scan.objects.create(case_id=case_id, image=file)
-          
+        # Get case, Save new scan image
         case = get_object_or_404(MedicalCase, id=case_id)
-        logger.info(f"Uploading scan for case {case_id} by user {request.user.id}")
-
-        # 1. Save scan
         scan = ChestScan.objects.create(case=case, image_path=file)
         
-        logger.info(f"Scan saved with ID {scan.id}, starting classification.")
+        # Get all the active models
+        model_versions = ModelVersion.objects.filter(is_active=True)
+        if not model_versions.exists():
+            return Response({"error": "No active model versions available"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        logger.info(f"Found {model_versions.count()} active model versions: {[mv.model_name for mv in model_versions]}")
+        
+        all_probs = []
+        model_weights = []
+        used_models = []
+        
+        # Loop through all active models, get and save their individual result's 
+        for model_version in model_versions:
+            try:
+                classifier = Classifier(
+                    model_version.model_name,
+                    img_size=config['img_size'],
+                    data_dir='./api/classifier/data'
+                )
+                classifier.load_model('.' + model_version.storage_uri) # '.' temporary seeding problem workaround
+                predicted_class, confidence, probabilities = classifier.predict(scan.image_path.path)
+                
+                # Save individual prediction
+                AIAnalysis.objects.create(
+                    scan=scan,
+                    prediction_label=predicted_class,
+                    confidence_score=confidence,
+                    model_version=model_version,
+                )
+                logger.info(f"Raw probs from {model_version.model_name}: {probabilities}")
 
-        # 2. Run CNN classifier
-        classifier = Classifier(
-            model_name='OwnV3',
-            img_size=(150, 150),
-            data_dir='../.archive/ml_tests/data_pneumonia_final_balanced_og'
-        )
-        classifier.load_model('checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5')
-        logger.info(f"Model loaded, running prediction on scan path {scan.image_path.path}.")
-        predicted_class, confidence, probabilities = classifier.predict(scan.image_path.path)
-        # label, confidence, heatmap_path, model_name = classifier.predict(scan.image.path)
-        logger.info(f"Prediction complete: {predicted_class} with confidence {confidence:.4f}")
-        # 3. Save analysis
-        model_version = ModelVersion.objects.get(model_name='OwnV3')
-        AIAnalysis.objects.create(
+                probabilities = np.array([
+                    probabilities.get("PNEUMONIA", 0.0),
+                    probabilities.get("NORMAL", 0.0),
+                ])
+                
+                # Keep probs for ensemble
+                all_probs.append(probabilities)
+                model_weights.append(model_version.performance_metrics.get("accuracy", 1.0))  # default weight = 1
+                used_models.append(model_version)
+                
+                logger.info(f"Analysis saved for model version {model_version.model_name}")
+            except Exception as e:
+                logger.error(f"Error during classification with model version {model_version.id}: {str(e)}")
+                return Response({"error": "Classification failed"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        logger.info(f"Collected probabilities from {len(all_probs)} models for ensemble.")
+        logger.info(f"Model weights: {model_weights}")
+        logger.info(f"Used models: {[mv.model_name for mv in used_models]}")
+        
+        # === ENSEMBLE CALCULATION ===
+        all_probs = np.array(all_probs)
+        weights = np.array(model_weights) / np.sum(model_weights)  # normalize
+        avg_probs = np.average(all_probs, axis=0, weights=weights)
+        
+        logger.info(f"Ensemble probabilities: {avg_probs}, weights: {weights}")
+
+        final_idx = int(np.argmax(avg_probs))
+        final_label = "pneumonia" if final_idx == 0 else "normal"   # adjust to your label ordering
+        final_conf = float(np.max(avg_probs))
+        
+        logger.info(f"Ensemble result: {final_label} with confidence {final_conf:.4f}")
+        
+        # Save ensemble result
+        ensemble = EnsembleResult.objects.create(
             scan=scan,
-            prediction_label=predicted_class,
-            confidence_score=confidence,
-            # heatmap_path=heatmap_path,
-            model_version=model_version,
+            method="weighted",
+            combined_prediction_label=final_label,
+            combined_confidence_score=final_conf,
         )
 
-        return Response({"message": "Upload successful"}, status=status.HTTP_201_CREATED)      
+        # Save relations with weights
+        for model_version, weight in zip(used_models, weights):
+            EnsembleResultModel.objects.create(
+                ensemble_result=ensemble,
+                model_version=model_version,
+                weight=float(weight),
+            )
+
+        return Response({"message": "Upload + classification + ensemble successful"}, status=status.HTTP_201_CREATED)      
 
 class AIAnalysisViewSet(viewsets.ReadOnlyModelViewSet):
     """Read-only endpoint for AI Analyses."""
