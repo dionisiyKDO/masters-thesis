@@ -3,6 +3,7 @@ from rest_framework.permissions import (AllowAny, IsAuthenticated, IsAdminUser, 
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import User
+from .permissions import IsDoctor, IsAdmin
 from .serializers import (
     UserSerializer,
     RegisterSerializer,
@@ -17,11 +18,12 @@ class UserViewSet(viewsets.ModelViewSet):
 
     queryset = User.objects.all().order_by("-date_joined")
     serializer_class = UserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdmin]
+
 
 class PatientListView(generics.ListAPIView):
     serializer_class = UserSerializer
-    permission_classes = [IsAuthenticated]   # or IsAdminUser, depends on your rules
+    permission_classes = [IsDoctor | IsAdmin]
 
     def get_queryset(self):
         return User.objects.filter(role="patient")
@@ -29,7 +31,7 @@ class PatientListView(generics.ListAPIView):
 
 class DoctorListView(generics.ListAPIView):
     serializer_class = UserSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAdmin]
 
     def get_queryset(self):
         return User.objects.filter(role="doctor")

@@ -1,28 +1,20 @@
-from rest_framework import status
-from rest_framework.viewsets import ViewSet
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.decorators import api_view, action
-from rest_framework.parsers import MultiPartParser, FormParser
-from django.shortcuts import get_object_or_404
-
-from rest_framework import viewsets, permissions
-from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult
-from .serializers import (
-    MedicalCaseSerializer, MedicalCaseDetailSerializer, ChestScanSerializer,
-    ModelVersionSerializer, AIAnalysisSerializer, DoctorAnnotationSerializer,
-)
-from .permissions import IsAdminOrReadOnly, IsDoctor, IsPatientOfCase, IsDoctorOfCase
-from .classifier.classifier import Classifier
-from .classifier.config import config_v1 as config
+import logging
 import numpy as np
 
-#region Env Setup
-import warnings
-import logging
-warnings.filterwarnings("ignore", category=UserWarning)
+from django.shortcuts import get_object_or_404
+from rest_framework import status, viewsets, permissions
+from rest_framework.decorators import action
+from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
-# Configure logging
+from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult
+from .serializers import ( MedicalCaseSerializer, MedicalCaseDetailSerializer, DoctorAnnotationSerializer )
+from .permissions import IsDoctor, IsPatientOfCase, IsDoctorOfCase, IsAdmin
+from .classifier.classifier import Classifier
+from .classifier.config import config_v1 as config
+
+#region Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -37,70 +29,66 @@ logger = logging.getLogger(__name__)
 
 class MedicalCaseViewSet(viewsets.ModelViewSet):
     """
-    API endpoint for Medical Cases.
-    - Patients can only see their own cases.
-    - Doctors can see cases they are assigned to.
-    - Admins can see all cases.
+    ViewSet for Medical Cases with role-based access control.
+    
+    Permissions:
+    - Patients: Can only view their own cases
+    - Doctors: Can view cases assigned to them, create new cases
+    - Admins: Full access to all cases
     """
-    queryset = MedicalCase.objects.all().select_related('patient', 'primary_doctor')
+    queryset = MedicalCase.objects.select_related('patient', 'primary_doctor').prefetch_related('scans')
     
     def get_serializer_class(self):
-        # Use a more detailed serializer for the 'retrieve' action
+        """Return appropriate serializer based on action."""
         if self.action == 'retrieve':
             return MedicalCaseDetailSerializer
+        # elif self.action == 'list' and self.request.query_params.get('summary', '').lower() == 'true':
+        #     return MedicalCaseSummarySerializer
         return MedicalCaseSerializer
     
     def get_permissions(self):
-        """Instantiates and returns the list of permissions that this view requires."""
+        """Set permissions based on action."""
         if self.action in ['list', 'retrieve']:
-            # A patient OR a doctor can view the case details
-            permission_classes = [permissions.IsAuthenticated, IsPatientOfCase | IsDoctorOfCase]
-        else:
-            # Only doctors can create/update cases
-            permission_classes = [IsDoctor]
+            permission_classes = [permissions.IsAuthenticated, IsPatientOfCase | IsDoctorOfCase | IsAdmin]
+        elif self.action in ['create', 'update', 'partial_update']:
+            permission_classes = [IsDoctor | IsAdmin]
+        else:  # destroy
+            permission_classes = [IsAdmin]
+        
         return [permission() for permission in permission_classes]
-
+    
     def get_queryset(self):
-        """
-        Filter cases based on user role.
-        """
+        """Filter queryset based on user role."""
         user = self.request.user
+        
         if user.role == 'patient':
             return self.queryset.filter(patient=user)
-        if user.role == 'doctor':
+        elif user.role == 'doctor':
             return self.queryset.filter(primary_doctor=user)
-        # Admins can see all cases (default queryset)
+        # Admins see all cases
         return self.queryset
 
-class ChestScanViewSet(viewsets.ModelViewSet):
-    """API endpoint for Chest Scans."""
-    queryset = ChestScan.objects.all()
-    serializer_class = ChestScanSerializer
-    permission_classes = [permissions.IsAuthenticated, IsDoctorOfCase] # Only the assigned doctor can manage scans
 
 class ScanUploadView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
+    """
+    Handle chest scan uploads with automatic AI analysis.
+    
+    Processes uploaded images through all active AI models and generates
+    ensemble predictions.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsDoctor]
     parser_classes = [MultiPartParser, FormParser]
 
-    def post(self, request, case_id):
-        file = request.data.get("image")
-        if not file:
-            return Response({"error": "No file uploaded"}, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Get case, Save new scan image
-        case = get_object_or_404(MedicalCase, id=case_id)
-        scan = ChestScan.objects.create(case=case, image_path=file)
-        
+    def _run_ai_analysis(self, scan):
+        """Run AI analysis on scan using all active models."""
         # Get all the active models
         model_versions = ModelVersion.objects.filter(is_active=True)
         if not model_versions.exists():
             return Response({"error": "No active model versions available"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         logger.info(f"Found {model_versions.count()} active model versions: {[mv.model_name for mv in model_versions]}")
         
-        all_probs = []
-        model_weights = []
-        used_models = []
-        
+        analyses = []
+
         # Loop through all active models, get and save their individual result's 
         for model_version in model_versions:
             try:
@@ -113,72 +101,137 @@ class ScanUploadView(APIView):
                 predicted_class, confidence, probabilities = classifier.predict(scan.image_path.path)
                 
                 # Save individual prediction
-                AIAnalysis.objects.create(
+                analysis = AIAnalysis.objects.create(
                     scan=scan,
                     prediction_label=predicted_class,
                     confidence_score=confidence,
                     model_version=model_version,
                 )
                 logger.info(f"Raw probs from {model_version.model_name}: {probabilities}")
-
+                
                 probabilities = np.array([
                     probabilities.get("PNEUMONIA", 0.0),
                     probabilities.get("NORMAL", 0.0),
                 ])
                 
-                # Keep probs for ensemble
-                all_probs.append(probabilities)
-                model_weights.append(model_version.performance_metrics.get("accuracy", 1.0))  # default weight = 1
-                used_models.append(model_version)
+                analyses.append({
+                    'analysis': analysis,
+                    'probabilities': probabilities,
+                    'model_version': model_version
+                })
                 
-                logger.info(f"Analysis saved for model version {model_version.model_name}")
+                logger.info(f"Completed analysis with model {model_version.model_name}: {predicted_class} ({confidence:.4f})")
+                
             except Exception as e:
-                logger.error(f"Error during classification with model version {model_version.id}: {str(e)}")
-                return Response({"error": "Classification failed"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+                logger.error(f"Error with model {model_version.model_name}: {str(e)}")
+                return {
+                    'success': False,
+                    'error': f"Analysis failed with model {model_version.model_name}"
+                }
+        
+        return {'success': True, 'analyses': analyses}
+    
+    def _create_ensemble_result(self, scan, analysis_results):
+        """Create ensemble prediction from individual analyses."""
+        all_probs = []
+        model_weights = []
+        source_analyses = []
+        
+        for result in analysis_results:
+            # Extract probabilities in consistent order
+            probs = result['probabilities']
+            
+            all_probs.append(probs)
+            model_weights.append(result['model_version'].performance_metrics.get("accuracy", 1.0))
+            source_analyses.append(result['analysis'])
+        
+        # Calculate weighted ensemble
+        all_probs = np.array(all_probs)
+        weights = np.array(model_weights)
+        weights = weights / np.sum(weights)  # Normalize weights
         
         logger.info(f"Collected probabilities from {len(all_probs)} models for ensemble.")
         logger.info(f"Model weights: {model_weights}")
-        logger.info(f"Used models: {[mv.model_name for mv in used_models]}")
         
-        # === ENSEMBLE CALCULATION ===
-        all_probs = np.array(all_probs)
-        weights = np.array(model_weights) / np.sum(model_weights)  # normalize
-        avg_probs = np.average(all_probs, axis=0, weights=weights)
+        ensemble_probs = np.average(all_probs, axis=0, weights=weights)
         
-        logger.info(f"Ensemble probabilities: {avg_probs}, weights: {weights}")
-
-        final_idx = int(np.argmax(avg_probs))
-        final_label = "pneumonia" if final_idx == 0 else "normal"   # adjust to your label ordering
-        final_conf = float(np.max(avg_probs))
+        # Determine final prediction
+        final_idx = int(np.argmax(ensemble_probs))
+        final_label = "pneumonia" if final_idx == 0 else "normal"
+        final_confidence = float(np.max(ensemble_probs))
         
-        logger.info(f"Ensemble result: {final_label} with confidence {final_conf:.4f}")
+        logger.info(f"Ensemble calculation: {final_label} with confidence {final_confidence:.4f}")
         
-        # Save ensemble result
+        # Create ensemble result
         ensemble = EnsembleResult.objects.create(
             scan=scan,
-            method="weighted",
+            method="weighted_accuracy",
             combined_prediction_label=final_label,
-            combined_confidence_score=final_conf,
+            combined_confidence_score=final_confidence,
         )
         
-        ensemble.source_analyses.set(AIAnalysis.objects.filter(scan=scan))
+        # Link source analyses
+        ensemble.source_analyses.set(source_analyses)
+        
+        return ensemble
+    
+    def post(self, request, case_id):
+        """Upload and analyze a chest scan."""
+        try:
+            file = request.data.get("image")
+            if not file:
+                return Response({"error": "No image file provided"}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({"message": "Upload + classification + ensemble successful"}, status=status.HTTP_201_CREATED)      
+            # Get case and create scan
+            case = get_object_or_404(MedicalCase, id=case_id)
+            scan = ChestScan.objects.create(case=case, image_path=file)
+            logger.info(f"Created new scan {scan.id} for case {case_id}")
+            
+            analysis_results = self._run_ai_analysis(scan)
+            if not analysis_results['success']:
+                return Response(
+                    {"error": analysis_results['error']}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+                
+            # Generate ensemble result
+            ensemble_result = self._create_ensemble_result(scan, analysis_results['analyses'])
+            
+            logger.info(f"Successfully processed scan {scan.id} with ensemble result: {ensemble_result.combined_prediction_label}")
+            
+            return Response({
+                "message": "Scan uploaded and analyzed successfully",
+                "scan_id": scan.id,
+                "ensemble_prediction": {
+                    "label": ensemble_result.combined_prediction_label,
+                    "confidence": ensemble_result.combined_confidence_score
+                }
+            }, status=status.HTTP_201_CREATED) 
 
-class AIAnalysisViewSet(viewsets.ReadOnlyModelViewSet):
-    """Read-only endpoint for AI Analyses."""
-    queryset = AIAnalysis.objects.all()
-    serializer_class = AIAnalysisSerializer
-    permission_classes = [permissions.IsAuthenticated, IsPatientOfCase | IsDoctorOfCase]
+        except Exception as e:
+            logger.error(f"Unexpected error in scan upload: {str(e)}")
+            return Response(
+                {"error": "An unexpected error occurred during processing"}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 
 class DoctorAnnotationViewSet(viewsets.ModelViewSet):
-    """Endpoint for Doctor Annotations."""
-    queryset = DoctorAnnotation.objects.all()
+    """
+    ViewSet for doctor annotations on scans.
+    
+    Only doctors can create/modify annotations.
+    Patients can view annotations on their scans.
+    """
+    queryset = DoctorAnnotation.objects.select_related('doctor', 'scan__case').all()
     serializer_class = DoctorAnnotationSerializer
-    permission_classes = [permissions.IsAuthenticated, IsDoctorOfCase]
 
-class ModelVersionViewSet(viewsets.ModelViewSet):
-    """Endpoint for AI Model Versions. Only Admins can modify."""
-    queryset = ModelVersion.objects.all()
-    serializer_class = ModelVersionSerializer
-    permission_classes = [IsAdminOrReadOnly]
+    def get_permissions(self):
+        """Set permissions based on action."""
+        if self.action in ['list', 'retrieve']:
+            permission_classes = [permissions.IsAuthenticated, IsPatientOfCase | IsDoctorOfCase | IsAdmin]
+        else:  # create, update, destroy
+            permission_classes = [permissions.IsAuthenticated, IsDoctorOfCase | IsAdmin]
+        
+        return [permission() for permission in permission_classes]
+
