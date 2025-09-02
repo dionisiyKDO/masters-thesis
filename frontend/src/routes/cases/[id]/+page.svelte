@@ -86,13 +86,15 @@
                     </div>
                     <div class="text-sm text-muted-foreground mb-4">Patient: {caseDetail.patient.first_name} {caseDetail.patient.last_name} | Doctor: {caseDetail.primary_doctor.first_name} {caseDetail.primary_doctor.last_name}</div>
                     
+                    <!-- Description -->
                     {#if caseDetail.description}
                         <div>
                             <div class="text-xs text-muted-foreground mb-0.5">Description</div>
                             <p class="text-foreground leading-relaxed">{caseDetail.description}</p>
                         </div>
                     {/if}
-
+                    
+                    <!-- Diagnosis -->
                     {#if caseDetail.diagnosis_summary}
                         <div class="bg-accent/5 border border-accent/20 rounded-lg p-4 mt-4">
                             <div class="flex items-center gap-2 mb-0">
