@@ -1,5 +1,5 @@
 <script>
-import { handleSubmit } from './load';
+	import { handleSubmit } from './load';
 </script>
 
 <div class="flex-1 flex items-center justify-center p-4">
