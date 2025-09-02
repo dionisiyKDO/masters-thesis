@@ -1,4 +1,5 @@
 <script lang="ts">
+	import AnalysisCard from "$lib/components/AnalysisCard.svelte";
 	import type { ChestScan } from "$lib/types"
     import { user } from '$lib/auth.js';
 	import api from "$lib/api";
@@ -138,32 +139,7 @@
 					</h5>
 					<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
 						{#each scan.ai_analyses as analysis}
-							<div class="bg-muted rounded-md border border-border px-4 py-3">
-								<div class="flex flex-col mb-2">		
-									<div class="flex items-center justify-between">
-										<span class="font-bold">Prediction:</span>
-										<span class="capitalize px-2 py-1 rounded bg-input text-foreground text-sm font-medium">
-											{analysis.prediction_label}
-										</span>
-									</div>
-									<div class="flex items-center justify-between">
-										<span class="font-bold">Confidence:</span>
-										<span class="font-bold text-foreground">
-											{(analysis.confidence_score * 100).toFixed(2)}%
-										</span>
-									</div>
-								</div>
-								<div class="space-y text-sm text-muted-foreground">
-									<div class="flex justify-between">
-										<span class="font-medium">Model:</span>
-										<span class="text-xs">{analysis.model_version.model_name}</span>
-									</div>
-									<div class="flex justify-between">
-										<span class="font-medium">Generated:</span>
-										<span class="text-xs">{new Date(analysis.generated_at).toLocaleDateString()}</span>
-									</div>
-								</div>
-							</div>
+							<AnalysisCard {analysis} />
 						{/each}
 					</div>
 				</div>
