@@ -3,7 +3,7 @@ from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnno
 from users.serializers import UserSerializer
 from users.models import User
 
-# Nested Serializers for Detailed Views
+# Nested secondary serializers
 class ModelVersionSerializer(serializers.ModelSerializer):
     uploaded_by_admin = UserSerializer(read_only=True)
 
@@ -19,7 +19,6 @@ class AIAnalysisSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class EnsembleResultSerializer(serializers.ModelSerializer):
-    # Include the individual analyses that made up this ensemble
     source_analyses = AIAnalysisSerializer(many=True, read_only=True)    
     
     class Meta:
@@ -27,9 +26,12 @@ class EnsembleResultSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class DoctorAnnotationSerializer(serializers.ModelSerializer):
-    # When reading
-    # expose doctor as full table
-    # expose scan as plain integer id
+    """
+    Serializer for doctor annotations on scans.
+    
+    Read: Returns full doctor object and scan ID
+    Write: Accepts doctor_id and scan_id for creation/updates
+    """
     doctor = UserSerializer(read_only=True)
     scan = serializers.IntegerField(source='scan.id', read_only=True)
     
@@ -39,45 +41,49 @@ class DoctorAnnotationSerializer(serializers.ModelSerializer):
     scan_id = serializers.PrimaryKeyRelatedField(
         queryset=ChestScan.objects.all(), source='scan', write_only=True
     )
-    # On write, you pass doctor_id: 1, scan_id: 42. 
-    # DRF will auto-resolve them into User and ChestScan objects.
-    
-    # On read, you get the full doctor object (via UserSerializer) 
-    # and just IDs for doctor_id / scan_id.
 
     class Meta:
         model = DoctorAnnotation
-        fields = ['id', 'notes', 'doctor', 'doctor_id', 'scan', 'scan_id', 'created_at']
-        
-    def to_internal_value(self, data):
-        print("Incoming raw data:", data)  # <-- shows exactly what DRF got from request
-        return super().to_internal_value(data)
+        fields = fields = [
+            'id', 'notes', 'created_at',
+            'doctor', 'scan',  # Read fields
+            'doctor_id', 'scan_id'  # Write fields
+        ]
 
+
+# Main Serializers for the API Endpoints
 class ChestScanSerializer(serializers.ModelSerializer):
-    # Individual AI analyses
+    # Related data
     ai_analyses = AIAnalysisSerializer(many=True, read_only=True)
-    
-    # Ensemble result (OneToOne relationship)
     ensemble_result = EnsembleResultSerializer(read_only=True)
-    
-    # Doctor annotations
     annotations = DoctorAnnotationSerializer(many=True, read_only=True)
-        
+    
     class Meta:
         model = ChestScan
         fields = '__all__'
 
 
-# Main Serializers for the API Endpoints
-
 class MedicalCaseSerializer(serializers.ModelSerializer):
-    # When reading, show user details, not just IDs
+    """
+    Base serializer for medical cases.
+    
+    Read: Returns full user objects for patient and doctor
+    Write: Accepts patient_id and primary_doctor_id
+    """
+    # Read fields - full user objects
     patient = UserSerializer(read_only=True)
     primary_doctor = UserSerializer(read_only=True)
     
-    # When writing, we only need the IDs
-    patient_id = serializers.IntegerField(write_only=True)
-    primary_doctor_id = serializers.IntegerField(write_only=True)
+    # Write fields - IDs only
+    # patient_id = serializers.IntegerField(write_only=True)
+    # primary_doctor_id = serializers.IntegerField(write_only=True)
+    
+    patient_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), source='patient', write_only=True
+    )
+    primary_doctor_id = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(), source='primary_doctor', write_only=True
+    )
 
     class Meta:
         model = MedicalCase
@@ -87,11 +93,11 @@ class MedicalCaseSerializer(serializers.ModelSerializer):
             'patient_id', 'primary_doctor_id'
         ]
 
-    def create(self, validated_data):
-        # Use the IDs from the write_only fields to create the case
-        validated_data['patient_id'] = validated_data.pop('patient_id')
-        validated_data['primary_doctor_id'] = validated_data.pop('primary_doctor_id')
-        return super().create(validated_data)
+    # def create(self, validated_data):
+    #     # Use the IDs from the write_only fields to create the case
+    #     validated_data['patient_id'] = validated_data.pop('patient_id')
+    #     validated_data['primary_doctor_id'] = validated_data.pop('primary_doctor_id')
+    #     return super().create(validated_data)
 
 
 class MedicalCaseDetailSerializer(MedicalCaseSerializer):
