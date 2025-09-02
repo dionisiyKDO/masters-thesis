@@ -17,6 +17,8 @@ augment.py
 redistribute.py
 test-1.py
 backend/media/scans/*
+backend/media/heatmaps/*
+backend/api/classifier/gradcam_results/
 
 backend/static/frontend/
 backend/staticfiles/
