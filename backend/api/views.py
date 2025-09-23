@@ -1,6 +1,10 @@
+
 import logging
 import numpy as np
+from io import BytesIO
+import cv2
 
+from django.core.files.base import ContentFile
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets, permissions
 from rest_framework.decorators import action
@@ -79,6 +83,16 @@ class ScanUploadView(APIView):
     permission_classes = [permissions.IsAuthenticated, IsDoctor]
     parser_classes = [MultiPartParser, FormParser]
 
+    def _save_heatmap_to_imagefield(self, array: np.ndarray, instance, field_name="heatmap_path", filename="heatmap.png"):
+        # Convert NumPy array (BGR from OpenCV) → PNG bytes
+        success, buffer = cv2.imencode(".png", array)
+        if not success:
+            raise ValueError("Failed to encode heatmap array to PNG")
+
+        # Wrap bytes into Django ContentFile
+        file_obj = ContentFile(buffer.tobytes())
+        getattr(instance, field_name).save(filename, file_obj, save=False)
+
     def _run_ai_analysis(self, scan):
         """Run AI analysis on scan using all active models."""
         # Get all the active models
@@ -99,6 +113,10 @@ class ScanUploadView(APIView):
                 )
                 classifier.load_model(model_version.storage_uri)
                 predicted_class, confidence, probabilities = classifier.predict(scan.image_path.path)
+                superimposed, heatmap, original = classifier.generate_gradcam_heatmap(
+                    image_path=scan.image_path.path,
+                    output_dir="./gradcam_results"
+                )
                 
                 # Save individual prediction
                 analysis = AIAnalysis.objects.create(
@@ -107,6 +125,12 @@ class ScanUploadView(APIView):
                     confidence_score=confidence,
                     model_version=model_version,
                 )
+                
+                if superimposed is not None: 
+                    self._save_heatmap_to_imagefield(superimposed, analysis)
+                    analysis.heatmap_type = "gradcam"
+                
+                analysis.save()
                 logger.info(f"Raw probs from {model_version.model_name}: {probabilities}")
                 
                 probabilities = np.array([
@@ -234,4 +258,3 @@ class DoctorAnnotationViewSet(viewsets.ModelViewSet):
             permission_classes = [permissions.IsAuthenticated, IsDoctorOfCase | IsAdmin]
         
         return [permission() for permission in permission_classes]
-
