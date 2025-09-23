@@ -4,7 +4,6 @@ const BASE_URL = 'http://localhost:8000/api';
 
 async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
     let accessToken = localStorage.getItem('access_token');
-    console.log(options);
     
     // Initial request
     let response = await fetch(`${BASE_URL}${url}`, {
