@@ -6,17 +6,21 @@ from .models import User, DoctorProfile, PatientProfile
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'first_name', 'last_name', 'role')
+        fields = ["id", "username", "email", "first_name", "last_name", "role", "date_joined"]
 
 class DoctorProfileSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    
     class Meta:
         model = DoctorProfile
-        fields = ('license_number', 'specialization')
+        fields = ["id", "user", "license_number", "specialization"]
 
 class PatientProfileSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    
     class Meta:
         model = PatientProfile
-        fields = ('dob', 'sex', 'medical_record_number')
+        fields = ["id", "user", "dob", "sex", "medical_record_number"]
 
 
 

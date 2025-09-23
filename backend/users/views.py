@@ -2,10 +2,12 @@ from rest_framework import viewsets, generics
 from rest_framework.permissions import (AllowAny, IsAuthenticated, IsAdminUser, IsAuthenticatedOrReadOnly)
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from .models import User
+from .models import User, PatientProfile, DoctorProfile
 from .permissions import IsDoctor, IsAdmin
 from .serializers import (
     UserSerializer,
+    PatientProfileSerializer,
+    DoctorProfileSerializer,
     RegisterSerializer,
     CustomTokenObtainPairSerializer,
 )
@@ -21,20 +23,14 @@ class UserViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAdmin]
 
 
-class PatientListView(generics.ListAPIView):
-    serializer_class = UserSerializer
-    permission_classes = [IsDoctor | IsAdmin]
-
-    def get_queryset(self):
-        return User.objects.filter(role="patient")
+class DoctorProfileViewSet(viewsets.ModelViewSet):
+    queryset = DoctorProfile.objects.all()
+    serializer_class = DoctorProfileSerializer
 
 
-class DoctorListView(generics.ListAPIView):
-    serializer_class = UserSerializer
-    permission_classes = [IsAdmin]
-
-    def get_queryset(self):
-        return User.objects.filter(role="doctor")
+class PatientProfileViewSet(viewsets.ModelViewSet):
+    queryset = PatientProfile.objects.all()
+    serializer_class = PatientProfileSerializer
 
 
 class RegisterView(generics.CreateAPIView):
