@@ -2,6 +2,9 @@ checkpoints/
 flattened/
 flattened-limited/
 data/
+dataset_processed/
+dataset_test/
+dataset_final/
 data_bone_frac/
 data_mura/
 data_alzheimer/
@@ -34,7 +37,7 @@ test.py
 classifier.log
 .archive/
 
-
+uv.lock
 
 backend/db.sqlite3
 
