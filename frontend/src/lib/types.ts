@@ -21,6 +21,25 @@ export interface User {
     id: number
     username: string
     email: string
+    first_name: string
+    last_name: string
+    role: string
+    date_joined: string
+}
+
+export interface Patient {
+    id: number
+    user: User
+    dob: string
+    sex: string
+    medical_record_number: string
+}
+
+export interface Doctor {
+    id: number
+    user: User
+    license_number: string
+    specialization: string
 }
 
 // API Model Types
