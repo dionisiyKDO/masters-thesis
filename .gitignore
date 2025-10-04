@@ -21,6 +21,7 @@ redistribute.py
 test-1.py
 backend/media/scans/*
 backend/media/heatmaps/*
+backend/media/seeding/*
 backend/api/classifier/gradcam_results/
 
 backend/static/frontend/
