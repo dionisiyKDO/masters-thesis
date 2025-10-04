@@ -465,6 +465,15 @@ wheels = [
 ]
 
 [[package]]
+name = "graphviz"
+version = "0.21"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f8/b3/3ac91e9be6b761a4b30d66ff165e54439dcd48b83f4e20d644867215f6ca/graphviz-0.21.tar.gz", hash = "sha256:20743e7183be82aaaa8ad6c93f8893c923bd6658a04c32ee115edb3c8a835f78", size = 200434, upload-time = "2025-06-15T09:35:05.824Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/91/4c/e0ce1ef95d4000ebc1c11801f9b944fa5910ecc15b5e351865763d8657f8/graphviz-0.21-py3-none-any.whl", hash = "sha256:54f33de9f4f911d7e84e4191749cac8cc5653f815b06738c54db9a15ab8b1e42", size = 47300, upload-time = "2025-06-15T09:35:04.433Z" },
+]
+
+[[package]]
 name = "grpcio"
 version = "1.73.1"
 source = { registry = "https://pypi.org/simple" }
@@ -827,12 +836,15 @@ dependencies = [
     { name = "djangorestframework" },
     { name = "djangorestframework-simplejwt" },
     { name = "faker" },
+    { name = "graphviz" },
     { name = "kaleido" },
     { name = "lime" },
     { name = "matplotlib" },
     { name = "opencv-python" },
     { name = "opencv-python-headless" },
     { name = "plotly" },
+    { name = "pydot" },
+    { name = "pydot-ng" },
     { name = "scikit-learn" },
     { name = "seaborn" },
     { name = "tensorflow", extra = ["and-cuda"] },
@@ -850,12 +862,15 @@ requires-dist = [
     { name = "djangorestframework", specifier = ">=3.16.1" },
     { name = "djangorestframework-simplejwt", specifier = ">=5.5.1" },
     { name = "faker", specifier = ">=37.5.3" },
+    { name = "graphviz", specifier = ">=0.21" },
     { name = "kaleido", specifier = ">=1.1.0" },
     { name = "lime", specifier = ">=0.2.0.1" },
     { name = "matplotlib", specifier = ">=3.10.3" },
     { name = "opencv-python", specifier = ">=4.11.0.86" },
     { name = "opencv-python-headless", specifier = ">=4.11.0.86" },
     { name = "plotly", specifier = ">=6.1.2" },
+    { name = "pydot", specifier = "==2.0.0" },
+    { name = "pydot-ng", specifier = "~=2.0.0" },
     { name = "scikit-learn", specifier = ">=1.7.0" },
     { name = "seaborn", specifier = ">=0.13.2" },
     { name = "tensorflow", extras = ["and-cuda"], specifier = "==2.15.1" },
@@ -1594,6 +1609,30 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/b8/e9/1f7efbe20d0b2b10f6718944b5d8ece9152390904f29a78e68d4e7961159/pydantic_core-2.33.2-pp311-pypy311_pp73-musllinux_1_1_armv7l.whl", hash = "sha256:de4b83bb311557e439b9e186f733f6c645b9417c84e2eb8203f3f820a4b988bf", size = 2239013, upload-time = "2025-04-23T18:33:26.621Z" },
     { url = "https://files.pythonhosted.org/packages/3c/b2/5309c905a93811524a49b4e031e9851a6b00ff0fb668794472ea7746b448/pydantic_core-2.33.2-pp311-pypy311_pp73-musllinux_1_1_x86_64.whl", hash = "sha256:82f68293f055f51b51ea42fafc74b6aad03e70e191799430b90c13d643059ebb", size = 2238715, upload-time = "2025-04-23T18:33:28.656Z" },
     { url = "https://files.pythonhosted.org/packages/32/56/8a7ca5d2cd2cda1d245d34b1c9a942920a718082ae8e54e5f3e5a58b7add/pydantic_core-2.33.2-pp311-pypy311_pp73-win_amd64.whl", hash = "sha256:329467cecfb529c925cf2bbd4d60d2c509bc2fb52a20c1045bf09bb70971a9c1", size = 2066757, upload-time = "2025-04-23T18:33:30.645Z" },
+]
+
+[[package]]
+name = "pydot"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyparsing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d7/2f/482fcbc389e180e7f8d7e7cb06bc5a7c37be6c57939dfb950951d97f2722/pydot-2.0.0.tar.gz", hash = "sha256:60246af215123fa062f21cd791be67dda23a6f280df09f68919e637a1e4f3235", size = 152022, upload-time = "2023-12-30T20:00:16.583Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/90/c9b51f3cdff89cd8f93382060330f43d1af098a6624cff439e700791e922/pydot-2.0.0-py3-none-any.whl", hash = "sha256:408a47913ea7bd5d2d34b274144880c1310c4aee901f353cf21fe2e526a4ea28", size = 22675, upload-time = "2023-12-30T20:00:14.24Z" },
+]
+
+[[package]]
+name = "pydot-ng"
+version = "2.0.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyparsing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/60/7a/d4022ba8b47d8f5e4c58b285e66eb233745f46f07bd7e6569a695fc91e7f/pydot_ng-2.0.0.tar.gz", hash = "sha256:8c8073b97aa7030c28118961e2c6c92f046e4cb57aeba7df87146f7baa6530c5", size = 264162, upload-time = "2018-10-16T22:08:38.52Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/5b/9a08333f2d70d404ffe42cea4f50159c4ad94feaa4d7585551c05cacef46/pydot_ng-2.0.0-py2.py3-none-any.whl", hash = "sha256:251ec5cde0d20ebd467b12fd8a4db0f52d2fbf6e12660a969a226823ba38644e", size = 20987, upload-time = "2018-10-16T22:08:37.041Z" },
 ]
 
 [[package]]

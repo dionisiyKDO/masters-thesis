@@ -1,5 +1,6 @@
 # Dataset structure
 
+```
 data/Bone_Fracture_Binary_Classification/
 └─ Bone_Fracture_Binary_Classification/
    ├─ test/
@@ -29,3 +30,4 @@ data/Bone_Fracture_Binary_Classification/
          ├─ 0.png
          ├─ 1.png
          └─ ....
+```
