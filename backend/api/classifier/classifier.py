@@ -1,6 +1,7 @@
 import os
 import cv2
 import time
+import json
 import logging
 import warnings
 import numpy as np
@@ -13,6 +14,7 @@ from PIL import ImageFile
 import seaborn as sns
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, classification_report
+from sklearn.utils.class_weight import compute_class_weight
 
 import tensorflow.keras.backend as K
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
@@ -45,9 +47,11 @@ logger = logging.getLogger(__name__)
 class Classifier:
     
     AVAILABLE_MODELS = [
-        'OwnV4', 'OwnV3', 'OwnV2', 'OwnV1', 'VGG16', 'VGG19', 'AlexNet', 
-        'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2'
+        'OwnV4', 'OwnV3', 'OwnV2', 'OwnV1', 
+        'AlexNet', 'VGG16', 'VGG19', 'ResNet50', 'DenseNet121', 'MobileNetV2',
     ]
+    
+    #region Initialize classifier with configuration
     
     def __init__(self, 
                  model_name: str = 'OwnV3',
@@ -96,7 +100,6 @@ class Classifier:
         
         self._setup_environment()
     
-
     def _detect_folders(self) -> Tuple[str, Optional[str], str]:
         """
         Automatically detect train, validation, and test directories.
@@ -113,9 +116,9 @@ class Classifier:
         val_dir = data_path / 'val'
         
         if train_dir.exists() and test_dir.exists():
-            val_path = str(val_dir) if val_dir.exists() else None
-            logger.info(f"Detected folders - Train: {train_dir}, Test: {test_dir}, Val: {val_path or 'None (will split from train)'}")
-            return str(train_dir), val_path, str(test_dir)
+            val_dir = val_dir if val_dir.exists() else None
+            logger.info(f"Detected folders - Train: {train_dir}, Test: {test_dir}, Val: {val_dir or 'None (will split from train)'}")
+            return str(train_dir), str(val_dir), str(test_dir)
         
         logger.error(f"Expected directory structure not found in {self.data_dir}")
         raise ValueError(
@@ -157,9 +160,13 @@ class Classifier:
     
         # Suppress TensorFlow info/warning messages
         # 0=all, 1=no INFO, 2=no INFO/WARNING, 3=no INFO/WARNING/ERROR
-        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+        os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
         return
-
+    
+    #endregion
+    
+    
+    #region Setup data pipeline
     
     def setup_data_generators(self, batch_size: int = 16) -> Tuple[int, int, int]:
         """
@@ -230,10 +237,14 @@ class Classifier:
     def _check_class_imbalance(self) -> None:
         """Check for class imbalance and log warnings if found."""
         # Get class distribution
+        # class_counts = {}
+        # for class_idx, class_name in self.class_labels.items():
+        #     count = sum(1 for label in self.train_generator.classes if label == class_idx)
+        #     class_counts[class_name] = count
         class_counts = {}
+        counts = np.bincount(self.train_generator.classes)
         for class_idx, class_name in self.class_labels.items():
-            count = sum(1 for label in self.train_generator.classes if label == class_idx)
-            class_counts[class_name] = count
+            class_counts[class_name] = counts[class_idx]
         
         logger.info(f"  Training class distribution: {class_counts}")
         
@@ -247,6 +258,10 @@ class Classifier:
         else:
             logger.info(f"  Class balance ratio: {imbalance_ratio:.2f}:1")
 
+    #endregion
+    
+    
+    #region Get CNN model
 
     def load_model(self, checkpoint_path: str) -> None:
         """Load a saved model from disk."""
@@ -416,7 +431,7 @@ class Classifier:
                 x = BatchNormalization()(x)
                 x = LeakyReLU(alpha=0.01)(x)
                 x = MaxPooling2D((3, 3), strides=2, padding='same')(x)
-                x = Dropout(0.25)(x) # <--- ADD DROPOUT AFTER POOLING
+                x = Dropout(0.2)(x) 
 
                 # --- Residual Blocks ---
                 x = residual_block(x, filters=32)
@@ -427,7 +442,7 @@ class Classifier:
                 # --- Classifier Head ---
                 x = GlobalAveragePooling2D()(x)
                 x = Dense(128, activation='relu')(x)
-                x = Dropout(0.5)(x)
+                x = Dropout(0.4)(x)
 
                 outputs = Dense(1, activation='sigmoid', name='output')(x) if self.num_classes == 2 \
                     else Dense(self.num_classes, activation='softmax', name='output')(x)
@@ -460,9 +475,11 @@ class Classifier:
                     'VGG16': tf.keras.applications.VGG16,
                     'VGG19': tf.keras.applications.VGG19,
                     'ResNet50': tf.keras.applications.ResNet50,
-                    'InceptionV3': tf.keras.applications.InceptionV3,
-                    'EfficientNetV2': tf.keras.applications.EfficientNetV2B0,
-                    'InceptionResNetV2': tf.keras.applications.InceptionResNetV2,
+                    'DenseNet121': tf.keras.applications.DenseNet121,
+                    'MobileNetV2': tf.keras.applications.MobileNetV2,
+                    # 'InceptionV3': tf.keras.applications.InceptionV3,
+                    # 'EfficientNetV2': tf.keras.applications.EfficientNetV2B0,
+                    # 'InceptionResNetV2': tf.keras.applications.InceptionResNetV2,
                 }
                 base = base_models[model_name](weights="imagenet", include_top=False, input_shape=self.img_shape)
                 base.trainable = False
@@ -505,17 +522,13 @@ class Classifier:
             logger.error(f"Error building model: {e}")
             return False
 
-    def train(self,              
-              epochs: int = 50,
-              batch_size: int = 32,
-              learning_rate: float = 0.001,
-              optimizer: str = 'adam',
-              
-              early_stopping: bool = True,
-              save_best: bool = True,
-              
-              checkpoint_dir: str = './checkpoints',
-              verbose: int = 1) -> Dict[str, Any]:
+    #endregion
+
+
+    #region CNN training/prediction
+
+    def train(self, epochs=50, batch_size=32, learning_rate=0.001, optimizer='adam',
+              early_stopping=True, save_best=True, checkpoint_dir='./checkpoints', verbose=1) -> Dict[str, Any]:
         """
         Train the model with comprehensive monitoring and callbacks.
         
@@ -532,9 +545,9 @@ class Classifier:
         Returns:
             Dictionary containing training results and metrics
         """
-        
+
         start_time = time.time()
-        
+
         logger.info("Starting model training...")
         logger.info("Training parameters:")
         logger.info(f"  Epochs: {epochs}, Batch size: {batch_size}")
@@ -573,27 +586,12 @@ class Classifier:
         }
         
         if self.num_classes == 2:
-            
-            def sensitivity(y_true, y_pred):
-                y_pred = tf.round(y_pred)
-                tp = tf.reduce_sum(tf.cast(y_true * y_pred, tf.float32))
-                fn = tf.reduce_sum(tf.cast(y_true * (1 - y_pred), tf.float32))
-                return tp / (tp + fn + tf.keras.backend.epsilon())
-
-            def specificity(y_true, y_pred):
-                y_pred = tf.round(y_pred)
-                tn = tf.reduce_sum(tf.cast((1 - y_true) * (1 - y_pred), tf.float32))
-                fp = tf.reduce_sum(tf.cast((1 - y_true) * y_pred, tf.float32))
-                return tn / (tn + fp + tf.keras.backend.epsilon())
-            
             loss_function = 'binary_crossentropy'
             metrics = [
                 'accuracy',
                 tf.keras.metrics.Precision(name='precision'),
                 tf.keras.metrics.Recall(name='recall'),
-                tf.keras.metrics.AUC(name='auc'), 
-                sensitivity, 
-                specificity
+                tf.keras.metrics.AUC(name='auc'),
             ]
         else:
             loss_function = 'categorical_crossentropy'
@@ -656,6 +654,16 @@ class Classifier:
         #endregion
         
         # Train model
+        class_labels = np.array(self.train_generator.classes)
+        class_weights = compute_class_weight(
+            'balanced',
+            classes=np.unique(class_labels),
+            y=class_labels
+        )
+        class_weight_dict = dict(enumerate(class_weights))
+        logger.info(f"Using Class Weights: {class_weight_dict}")
+
+
         logger.info("Starting training loop...")
         self.history = self.model.fit(
             self.train_generator,
@@ -663,6 +671,7 @@ class Classifier:
             epochs=epochs,
             validation_data=self.val_generator,
             validation_steps=validation_steps,
+            class_weight=class_weight_dict,
             callbacks=callbacks,
             verbose=verbose
         )
@@ -703,7 +712,6 @@ class Classifier:
         logger.info(f"  Epochs trained: {epochs_trained}")
         
         return results
-    
     
     def predict(self, image_path: str) -> Tuple[str, float, Dict[str, float]]:
         """
@@ -805,6 +813,7 @@ class Classifier:
 
         return summary
     
+    #region Generating plotts/heatmaps
     
     def generate_gradcam_heatmap(self, 
                                  image_path: str, 
@@ -1050,9 +1059,6 @@ class Classifier:
         logger.info(f"  Results saved in: {comparison_dir}")
     
     
-    
-    #region
-    
     def plot_confusion_matrix(self, normalize: bool = False, save_path: Optional[str] = None):
         if self.model is None or self.test_generator is None:
             print("Model or test data not available")
@@ -1089,7 +1095,7 @@ class Classifier:
         plt.ylabel("True Label", fontsize=12)
         plt.tight_layout()
 
-        save_path = save_path or f"./results/confusion_matrix.png"
+        save_path = save_path or os.path.join(".", "results", "confusion_matrix.png")
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         plt.close()
@@ -1116,21 +1122,29 @@ class Classifier:
         if self.history is None:
             logging.warning("No training history available to plot.")
             return
-
-        history = self.history.history
-        epochs = range(1, len(history["loss"]) + 1)
+        
+        # save data to json
+        # with open(os.path.join(".", "results", "training_history.json"), 'w') as f:
+        #     json.dump(self.history.history, f, indent=4)
+        # history = self.history.history
+        # epochs = range(1, len(history["loss"]) + 1)
+        
+        # retrieve history data
+        # with open(os.path.join(".", "results", "training_history.json"), 'r') as f:
+        #     history = json.load(f)
+        # epochs = range(1, len(history["loss"]) + 1)
         
         # Define the metrics to plot
         metrics_to_plot = {
             "Accuracy": "accuracy",
             "Loss": "loss",
             "AUC": "auc",
-            "Sensitivity": "sensitivity",
-            "Specificity": "specificity",
+            # "Sensitivity": "sensitivity",
+            # "Specificity": "specificity",
         }
         
         # Create a 2x3 grid for the plots
-        fig, axes = plt.subplots(2, 3, figsize=(18, 10))
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
         axes = axes.flatten() # Flatten for easy iteration
 
         # Use the helper to plot each metric
@@ -1151,7 +1165,7 @@ class Classifier:
         plt.close()
 
     def plot_data_distribution(self, train_labels: List, val_labels: List, test_labels: List, save_path: Optional[str] = None):
-        """Plots the distribution of data across train, validation, and test sets."""
+        """Plots the distribution of data across train, validation, and test sets."""        
         labels = [lbl.title() for lbl in self.class_labels.values()]
         
         # Calculate counts for each subset
@@ -1217,6 +1231,58 @@ class Classifier:
         plt.savefig(pie_save_path, dpi=300, bbox_inches="tight")
         plt.close()
     
+    def plot_model_architecture(self, save_path: Optional[str] = None):
+        """Saves a visualization of the model architecture to a file."""
+        if self.model is None:
+            logging.warning("No model available to plot.")
+            return
+        
+        save_path = save_path or os.path.join(".", "results", f"{self.model_name}_architecture.png")
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        
+        try:
+            tf.keras.utils.plot_model(
+                self.model,
+                to_file=save_path,
+                show_shapes=True,
+                show_dtype=False,
+                show_layer_names=True,
+                rankdir="TB",
+                expand_nested=False,
+                dpi=96
+            )
+            logging.info(f"Model architecture saved to {save_path}")
+        except Exception as e:
+            logging.error(f"Error saving model architecture: {e}")
+    
+    def plot_images_example(self, save_path: Optional[str] = None):
+        """Saves a grid of example images from the training set."""
+        if self.train_generator is None:
+            logging.warning("No training data available to plot.")
+            return
+        
+        save_path = save_path or os.path.join(".", "results", f"{self.model_name}_example_images.png")
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        
+        try:
+            images, labels = next(self.train_generator)
+            
+            # Plotting
+            plt.figure(figsize=(12, 12))
+            for i in range(min(9, len(images))):
+                plt.subplot(3, 3, i + 1)
+                plt.imshow(images[i])
+                label_idx = np.argmax(labels[i]) if self.num_classes > 2 else int(labels[i])
+                plt.title(self.class_labels.get(label_idx, "Unknown"))
+                plt.axis("off")
+            
+            plt.tight_layout()
+            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            plt.close()
+            logging.info(f"Example images saved to {save_path}")
+        except Exception as e:
+            logging.error(f"Error saving example images: {e}")
+    
     #endregion
 
 
@@ -1276,7 +1342,11 @@ def ensemble_testing():
             logger.info(f"  {k}: {v:.4f}")
 
 def model_testing():
-    data_dir = './backend/api/classifier/dataset_processed'
+    # data_dir = './dataset_processed'
+    data_dir = './data'
+    # data/ - first final version
+    # dataset_processed/ - augmented 50/50 balanced mixed
+    # data_test/ - resplitted original
     
     classifier = Classifier(
         model_name='OwnV3',
@@ -1286,19 +1356,25 @@ def model_testing():
     )
     
     # Train the model
-    results = classifier.train(
-        epochs=50,
-        batch_size=16, 
-        learning_rate=0.0003,
-    )
+    # results = classifier.train(
+    #     epochs=100,
+    #     batch_size=16, 
+    #     learning_rate=0.0003,
+    # )
     
-    classifier.plot_confusion_matrix()
-    classifier.plot_training_history()
+    if classifier.train_generator is None:
+        classifier.setup_data_generators()
+    if classifier.model is None:
+        classifier.build_model()
+    # classifier.plot_confusion_matrix()
+    # classifier.plot_training_history()
     classifier.plot_data_distribution(
         train_labels=classifier.train_generator.classes,
         test_labels=classifier.test_generator.classes,
         val_labels=classifier.val_generator.classes
     )
+    classifier.plot_model_architecture()
+    classifier.plot_images_example()
     
     # Load the model
     # classifier.load_model('../../checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5')
@@ -1326,3 +1402,4 @@ if __name__ == "__main__":
     # ensemble_testing()
     model_testing()
     ...
+    
