@@ -56,38 +56,28 @@ class Classifier:
     def __init__(self, 
                  model_name: str = 'OwnV3',
                  img_size: Tuple[int, int] = (150, 150),
-                 data_dir: str = './') -> None:
+                 data_dir: str = './data') -> None:
         """
         Initialize the Classifier with specified configuration.
-        
-        Args:
-            model_name: Name of the model architecture to use. \n
-                Possible values:
-                ['OwnV3', 'OwnV2', 'OwnV1', 'VGG16', 'VGG19', 'AlexNet', 
-                'InceptionV3', 'EfficientNetV2', 'ResNet50', 'InceptionResNetV2']
-            img_size: Target image dimensions as (width, height)
-            data_dir: Path to the root data directory containing class subdirectories\n
-                Expects directory structure like:
-                    data_dir/
-                    ├── train/
-                    │   ├── class1/
-                    │   └── class2/
-                    ├── test/
-                    │   ├── class1/
-                    │   └── class2/
-                    └── val/ (optional)
-                        ├── class1/
-                        └── class2/
+
+        :param model_name: Name of the model architecture to use. Must be in Classifier.AVAILABLE_MODELS.
+        :type model_name: str
+        :param img_size: Target image dimensions as (width, height).
+        :type img_size: Tuple[int, int]
+        :param data_dir: Path to the root data directory. Must contain 'train/' and 'test/' subdirectories.
+        :type data_dir: str
         """
-        logger.info(f"Initializing Classifier with model: {model_name}, image size: {img_size}")
-        
         if model_name not in self.AVAILABLE_MODELS:
-            raise ValueError(f"Unsupported model '{model_name}'. Available: {self.AVAILABLE_MODELS}")
+            logger.error(f"[INIT] Unsupported model '{self.model_name}'. Available: {self.AVAILABLE_MODELS}")
+            raise ValueError(f"Unsupported model '{self.model_name}'. Available: {self.AVAILABLE_MODELS}")
+            
+        logger.info(f"[INIT] Initializing Classifier with model: {model_name}, size: {img_size}")
         
         self.model_name = model_name
         self.img_size = img_size
         self.img_shape = (*img_size, 3)
         self.data_dir = data_dir
+        
         
         self.train_dir, self.val_dir, self.test_dir = self._detect_folders()
         self.class_labels, self.num_classes, self.class_mode = self._detect_classes()
@@ -103,10 +93,12 @@ class Classifier:
     def _detect_folders(self) -> Tuple[str, Optional[str], str]:
         """
         Automatically detect train, validation, and test directories.
-        Returns: Tuple containing (train_dir, val_path, test_dir)
+        
+        :returns: (train_dir, val_dir, test_dir) paths.
+        :rtype: Tuple[str, Optional[str], str]
         """
         if not self.data_dir:
-            logger.error("No data directory specified")
+            logger.error("[DATA] No data directory specified.")
             raise ValueError("No data directory specified")
             
         data_path = Path(self.data_dir)
@@ -117,10 +109,13 @@ class Classifier:
         
         if train_dir.exists() and test_dir.exists():
             val_dir = val_dir if val_dir.exists() else None
-            logger.info(f"Detected folders - Train: {train_dir}, Test: {test_dir}, Val: {val_dir or 'None (will split from train)'}")
+            logger.info(f"[DATA] Detected folders:")
+            logger.info(f"  Train: {train_dir}")
+            logger.info(f"  Test: {test_dir}")
+            logger.info(f"  Val: {val_dir or 'None (will split from train)'}")
             return str(train_dir), str(val_dir), str(test_dir)
         
-        logger.error(f"Expected directory structure not found in {self.data_dir}")
+        logger.error(f"[DATA] Expected directory structure not found in {self.data_dir}")
         raise ValueError(
             f"Expected directory structure not found in {self.data_dir}. "
             "Expected: train/ and test/ directories (val/ is optional)"
@@ -128,22 +123,24 @@ class Classifier:
     
     def _detect_classes(self) -> Tuple[Dict[int, str], int, str]:
         """
-        Auto-detect class labels from directory structure.
-        Returns: Tuple containing (Mapping of class indices to class names, number of classes, class mode('binary' or 'categorical'))
+        Auto-detect class labels from the data directory structure.
+        
+        :returns: (Class index mapping, number of classes, classification mode).
+        :rtype: Tuple[Dict[int, str], int, str]
         """
         
         classes = sorted([d.name for d in Path(self.train_dir).iterdir() if d.is_dir()])
         num_classes = len(classes)
         class_mode = 'binary' if num_classes == 2 else 'categorical'
         
-        logger.info(f"Found {num_classes} valid classes: {classes}")
+        logger.info(f"[DATA] Found {num_classes} valid classes: {classes}")
         if num_classes == 2:
-            logger.info("Binary classification mode detected")
+            logger.info("  Binary classification mode detected.")
         elif num_classes > 10:
-            logger.warning(f"Large number of classes ({num_classes}) detected.Consider if this is intentional.")
+            logger.warning(f"[DATA] Large number of classes ({num_classes}) detected. Consider if this is intentional.")
         else:
-            logger.info(f"Multi-class classification mode with {num_classes} classes")
-        
+            logger.info(f"  Multi-class classification mode with {num_classes} classes.")
+                    
         return {idx: cls for idx, cls in enumerate(classes)}, num_classes, class_mode
     
     def _setup_environment(self) -> None:
@@ -151,16 +148,18 @@ class Classifier:
         physical_devices = tf.config.list_physical_devices('GPU')
         if physical_devices:
             try:
+                device_name = physical_devices[0].name if hasattr(physical_devices[0], 'name') else physical_devices[0]
                 tf.config.experimental.set_memory_growth(physical_devices[0], True)
-                logger.info(f"GPU memory growth enabled for device: {physical_devices[0]}")
+                logger.info(f"[ENV] GPU memory growth enabled for device: {device_name}")
             except RuntimeError as e:
-                logger.warning(f"Could not set GPU memory growth: {e}")
+                logger.warning(f"[ENV] Could not set GPU memory growth: {e}")
         else:
-            logger.info("No GPU devices found, using CPU")
+            logger.info("[ENV] No GPU devices found, using CPU.")
     
         # Suppress TensorFlow info/warning messages
         # 0=all, 1=no INFO, 2=no INFO/WARNING, 3=no INFO/WARNING/ERROR
         os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+        logger.info("[ENV] Suppressing TensorFlow internal INFO/WARNING messages (level 2).")
         return
     
     #endregion
@@ -168,11 +167,16 @@ class Classifier:
     
     #region Setup data pipeline
     
-    def setup_data_generators(self, batch_size: int = 16) -> Tuple[int, int, int]:
+    def _setup_data_generators(self, batch_size: int = 16) -> Tuple[int, int, int]:
         """
         Setup data generators for training, validation, and testing with augmentation.
-        Returns: Tuple containing (steps_per_epoch, validation_steps, test_steps)
+
+        :param batch_size: Number of samples per batch.
+        :type batch_size: int
+        :returns: (steps_per_epoch, validation_steps, test_steps).
+        :rtype: Tuple[int, int, int]
         """
+        logger.info(f"[DATA] Setting up data generators with batch size: {batch_size}")
         
         # Default augmentation config
         augmentation_config = {
@@ -198,14 +202,14 @@ class Classifier:
 
         # Train/val setup
         if self.val_dir and os.path.isdir(self.val_dir):
-            logger.info("  Using explicit validation directory")
+            logger.info("  Using explicit validation directory.")
             train_datagen = ImageDataGenerator(rescale=1./255, **augmentation_config)
             val_datagen = ImageDataGenerator(rescale=1./255)
             self.train_generator = make_generator(train_datagen, self.train_dir, shuffle=True)
             self.val_generator = make_generator(val_datagen, self.val_dir)
         else:
             val_split = 0.2
-            logger.info(f"  Splitting training data into train/val with ratio {1-val_split:.1f}/{val_split:.1f}")
+            logger.info(f"  Splitting training data into train/val (ratio {1-val_split:.1f}/{val_split:.1f}).")
             train_datagen = ImageDataGenerator(rescale=1./255, validation_split=val_split, **augmentation_config)
             self.train_generator = make_generator(train_datagen, self.train_dir, subset="training", shuffle=True)
             self.val_generator = make_generator(train_datagen, self.train_dir, subset="validation")
@@ -217,6 +221,7 @@ class Classifier:
         # Compare class indices
         generated_class_labels = {v: k for k, v in self.train_generator.class_indices.items()}
         if generated_class_labels != self.class_labels:
+            logger.error("[DATA] Class labels mismatch between detected and generator.")
             raise ValueError(f"Class labels from generator do not match detected labels: {generated_class_labels} vs {self.class_labels}")
         
         # Calculate steps for training
@@ -227,26 +232,22 @@ class Classifier:
         # Check for class imbalance
         self._check_class_imbalance()
         
-        logger.info("   Data generators setup complete:")
-        logger.info(f"      Training samples: {self.train_generator.samples} ({steps_per_epoch} steps)")
-        logger.info(f"      Validation samples: {self.val_generator.samples} ({validation_steps} steps)")
-        logger.info(f"      Test samples: {self.test_generator.samples} ({test_steps} steps)")
+        logger.info("[DATA] Data generators setup complete:")
+        logger.info(f"  Training samples: {self.train_generator.samples} ({steps_per_epoch} steps)")
+        logger.info(f"  Validation samples: {self.val_generator.samples} ({validation_steps} steps)")
+        logger.info(f"  Test samples: {self.test_generator.samples} ({test_steps} steps)")
         
         return steps_per_epoch, validation_steps, test_steps
 
     def _check_class_imbalance(self) -> None:
         """Check for class imbalance and log warnings if found."""
         # Get class distribution
-        # class_counts = {}
-        # for class_idx, class_name in self.class_labels.items():
-        #     count = sum(1 for label in self.train_generator.classes if label == class_idx)
-        #     class_counts[class_name] = count
         class_counts = {}
         counts = np.bincount(self.train_generator.classes)
         for class_idx, class_name in self.class_labels.items():
             class_counts[class_name] = counts[class_idx]
         
-        logger.info(f"  Training class distribution: {class_counts}")
+        logger.info(f"[DATA] Training class distribution: {class_counts}")
         
         # Check for imbalance
         counts = list(class_counts.values())
@@ -254,9 +255,9 @@ class Classifier:
         imbalance_ratio = max_count / min_count if min_count > 0 else float('inf')
         
         if imbalance_ratio > 3:
-            logger.warning(f"   Significant class imbalance detected! Ratio: {imbalance_ratio:.2f}:1")
+            logger.warning(f"[DATA] Significant class imbalance detected! Ratio: {imbalance_ratio:.2f}:1")
         else:
-            logger.info(f"  Class balance ratio: {imbalance_ratio:.2f}:1")
+            logger.info(f"[DATA] Class balance ratio: {imbalance_ratio:.2f}:1")
 
     #endregion
     
@@ -266,19 +267,24 @@ class Classifier:
     def load_model(self, checkpoint_path: str) -> None:
         """Load a saved model from disk."""
         self.model = tf.keras.models.load_model(checkpoint_path)
-        logger.info(f"Model loaded from {checkpoint_path}")
+        logger.info(f"[MODEL] Model loaded from {checkpoint_path}")
     
-    def build_model(self) -> bool:
-        """Build the specified model architecture."""
+    def _build_model(self) -> bool:
+        """
+        Build the specified model architecture.
+
+        :returns: True if model built successfully, False otherwise.
+        :rtype: bool
+        """
         try:
             def add_output_layer(model):
                 """Attach final classification layer based on num_classes."""
                 if self.num_classes == 2:
                     model.add(Dense(1, activation='sigmoid', name='output'))
-                    logger.info("   Added sigmoid output layer for binary classification")
+                    logger.info("  Added sigmoid output layer for binary classification")
                 else:
                     model.add(Dense(self.num_classes, activation='softmax', name='output'))
-                    logger.info(f"   Added softmax output layer for {self.num_classes}-class classification")
+                    logger.info(f"  Added softmax output layer for {self.num_classes}-class classification")
                 return model
             
             def build_ownv1():
@@ -502,16 +508,17 @@ class Classifier:
 
             # Build chosen model
             if self.model_name in builders:
-                logger.info(f"Building {self.model_name} architecture")
+                logger.info(f"[MODEL] Building {self.model_name} architecture.")
                 self.model = builders[self.model_name]()
             else:
-                logger.info(f"Building transfer learning model: {self.model_name}")
+                logger.info(f"[MODEL] Building transfer learning model: {self.model_name}")
                 self.model = build_transfer(self.model_name)
 
             # Count parameters
             total_params = self.model.count_params()
             trainable_params = sum([K.count_params(w) for w in self.model.trainable_weights])
-            logger.info("Model built successfully:")
+            
+            logger.info("[MODEL] Model built successfully:")
             logger.info(f"  Total parameters: {total_params:,}")
             logger.info(f"  Trainable parameters: {trainable_params:,}")
             logger.info(f"  Non-trainable parameters: {total_params - trainable_params:,}")
@@ -519,218 +526,219 @@ class Classifier:
             return True
             
         except Exception as e:
-            logger.error(f"Error building model: {e}")
+            logger.error(f"[MODEL] Error building model: {e}")
             return False
 
     #endregion
 
 
-    #region CNN training/prediction
+    #region CNN training/predict
 
     def train(self, epochs=50, batch_size=32, learning_rate=0.001, optimizer='adam',
               early_stopping=True, save_best=True, checkpoint_dir='./checkpoints', verbose=1) -> Dict[str, Any]:
         """
-        Train the model with comprehensive monitoring and callbacks.
-        
-        Args:
-            epochs: Maximum number of training epochs
-            batch_size: Batch size for training
-            learning_rate: Initial learning rate
-            optimizer: Optimizer type ('adam', 'adamw', 'sgd')
-            early_stopping: Whether to use early stopping based on validation AUC
-            save_best: Whether to save the best model during training
-            checkpoint_dir: Directory to save model checkpoints
-            verbose: Verbosity level
-            
-        Returns:
-            Dictionary containing training results and metrics
+        Train the model.
+
+        :param epochs: Number of epochs to train for.
+        :type epochs: int
+        :param batch_size: Samples per batch.
+        :type batch_size: int
+        :param learning_rate: Optimizer learning rate.
+        :type learning_rate: float
+        :param optimizer: Name of the optimizer ('adam', 'sgd', etc.).
+        :type optimizer: str
+        :param early_stopping: Enable early stopping callback.
+        :type early_stopping: bool
+        :param save_best: Enable model checkpointing for the best weights.
+        :type save_best: bool
+        :param checkpoint_dir: Directory to save model checkpoints.
+        :type checkpoint_dir: str
+        :param verbose: Verbosity level for training (0=silent, 1=progress bar, 2=one line per epoch).
+        :type verbose: int
+        :returns: Dictionary of final evaluation results on the test set.
+        :rtype: Dict[str, Any]
         """
 
         start_time = time.time()
+        logger.info(f"[TRAIN] Starting model training: {self.model_name}")
+        logger.info(f"  Config: Epochs={epochs}, Batch={batch_size}, Optimizer={optimizer}, LR={learning_rate}")
 
-        logger.info("Starting model training...")
-        logger.info("Training parameters:")
-        logger.info(f"  Epochs: {epochs}, Batch size: {batch_size}")
-        logger.info(f"  Learning rate: {learning_rate}, Optimizer: {optimizer}")
-        logger.info(f"  Early stopping: {early_stopping}, Save best: {save_best}")
-        
-        # Setup data generators, build model
-        steps_per_epoch, validation_steps, test_steps = self.setup_data_generators(batch_size=batch_size)
-        self.build_model()
-        
-        # Compile model
-        #region
-        total_steps = steps_per_epoch * epochs 
-        optimizers = {
-            'adam': Adam(
-                learning_rate=learning_rate, 
-                beta_1=0.9, 
-                beta_2=0.999,
-                epsilon=1e-7
-            ),
-            'adamax': Adamax(
-                learning_rate=learning_rate
-            ),
-            'adamw': AdamW(
-                learning_rate=learning_rate,
-                weight_decay=0.01
-            ),
-            'sgd': SGD(
-                learning_rate=CosineDecay(
-                    initial_learning_rate=learning_rate,
-                    decay_steps=total_steps
-                ),
-                momentum=0.9,
-                nesterov=True
-            ),
-        }
-        
-        if self.num_classes == 2:
-            loss_function = 'binary_crossentropy'
-            metrics = [
-                'accuracy',
-                tf.keras.metrics.Precision(name='precision'),
-                tf.keras.metrics.Recall(name='recall'),
-                tf.keras.metrics.AUC(name='auc'),
-            ]
-        else:
-            loss_function = 'categorical_crossentropy'
-            metrics = [
+        def get_loss_and_metrics():
+            """Return loss and metrics based on classification type."""
+            if self.num_classes == 2:
+                return 'binary_crossentropy', [
+                    'accuracy',
+                    tf.keras.metrics.Precision(name='precision'),
+                    tf.keras.metrics.Recall(name='recall'),
+                    tf.keras.metrics.AUC(name='auc'),
+                ]
+            return 'categorical_crossentropy', [
                 'accuracy',
                 tf.keras.metrics.Precision(name='precision', average='weighted'),
                 tf.keras.metrics.Recall(name='recall', average='weighted'),
-                tf.keras.metrics.F1Score(name='f1_score', average='weighted')
+                tf.keras.metrics.F1Score(name='f1_score', average='weighted'),
             ]
-        
-        logger.info(f"  Using loss function: {loss_function}")
-        logger.info(f"  Using metrics: {metrics}")
-        
-        self.model.compile(
-            optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate)),
-            loss=loss_function,
-            metrics=metrics
-        )
-        
-        if verbose > 0:
-            self.model.summary()
-        #endregion
-        
-        # Setup callbacks
-        #region
-        logger.info("Setting up training callbacks...")
-        callbacks = []
-        
-        if early_stopping:
-            patience = 12 if epochs >= 30 else max(3, epochs // 3)
-            callbacks.append(EarlyStopping(
-                monitor='val_accuracy',
-                patience=patience,
-                restore_best_weights=True,
-                verbose=verbose,
-                mode='max'
-            ))
-            logger.info(f"   Added EarlyStopping callback ({patience}, monitor='val_auc')")
-        if save_best:
-            os.makedirs(checkpoint_dir, exist_ok=True)
-            callbacks.append(ModelCheckpoint(
-                filepath=os.path.join(checkpoint_dir, 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'),
-                monitor='val_accuracy',
-                save_best_only=True,
-                save_weights_only=False,
-                verbose=verbose,
-                mode='max'
-            ))
-            logger.info(f"  Added ModelCheckpoint callback (save to: {checkpoint_dir})")
-        callbacks.append(ReduceLROnPlateau(
-            monitor='val_accuracy',
-            factor=0.5,
-            patience=5,
-            min_lr=1e-8,
-            verbose=verbose,
-            mode='max'
-        ))
-        logger.info("Added ReduceLROnPlateau callback (factor=0.5, patience=5)")
 
-        #endregion
+        def get_class_weights():
+            """Balanced class weights for imbalanced datasets."""
+            labels = np.array(self.train_generator.classes)
+            weights = compute_class_weight('balanced', classes=np.unique(labels), y=labels)
+            return dict(enumerate(weights))
+
+        def get_callbacks():
+            """Create training callbacks list."""
+            callbacks = []
+            callbacks.append(ReduceLROnPlateau(monitor='val_auc', factor=0.5,
+                                            patience=5, min_lr=1e-8, verbose=verbose, mode='max'))
+            if early_stopping:
+                patience = 12 if epochs >= 30 else max(3, epochs // 3)
+                callbacks.append(EarlyStopping(monitor='val_auc', patience=patience,
+                                            restore_best_weights=True, verbose=verbose, mode='max'))
+            if save_best:
+                os.makedirs(checkpoint_dir, exist_ok=True)
+                callbacks.append(ModelCheckpoint(
+                    filepath=os.path.join(checkpoint_dir, 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'),
+                    monitor='val_accuracy', save_best_only=True, save_weights_only=False, verbose=verbose, mode='max'))
+            return callbacks
         
-        # Train model
-        class_labels = np.array(self.train_generator.classes)
-        class_weights = compute_class_weight(
-            'balanced',
-            classes=np.unique(class_labels),
-            y=class_labels
-        )
-        class_weight_dict = dict(enumerate(class_weights))
-        logger.info(f"Using Class Weights: {class_weight_dict}")
+        def compile_model():
+            """Compile model with chosen optimizer, loss, and metrics."""
+            total_steps = steps_per_epoch * epochs
+            optimizers = {
+                'adam': Adam(learning_rate=learning_rate, beta_1=0.9, beta_2=0.999, epsilon=1e-7),
+                'adamw': AdamW(learning_rate=learning_rate, weight_decay=0.01),
+                'sgd': SGD(learning_rate=CosineDecay(learning_rate, total_steps), momentum=0.9, nesterov=True),
+            }
+            loss_fn, metrics = get_loss_and_metrics()
+            self.model.compile(optimizer=optimizers.get(optimizer, Adam(learning_rate=learning_rate)),
+                            loss=loss_fn, metrics=metrics)
+            if verbose > 0:
+                self.model.summary()
+            logger.info(f"[TRAIN] Model compiled with loss={loss_fn}, optimizer={optimizer}")
+        
+        def evaluate_training():
+            """Evaluate model after training and return summary results."""
+            elapsed = time.time() - start_time
+            results_dict = dict(zip(self.model.metrics_names,
+                                    self.model.evaluate(self.test_generator, verbose=0)))
+            results = {
+                'loss': results_dict['loss'],
+                'accuracy': results_dict['accuracy'],
+                'training_time': elapsed,
+                'epochs_trained': len(self.history.history['loss']),
+                'classification_type': self.class_mode,
+                'num_classes': self.num_classes,
+                'model_name': self.model_name,
+                'img_size': self.img_size,
+                'batch_size': batch_size,
+                'optimizer': optimizer,
+                'learning_rate': learning_rate
+            }
+            for metric in ['precision', 'recall', 'auc', 'f1_score']:
+                if metric in results_dict:
+                    results[metric] = results_dict[metric]
+            return results
 
+        # 1. Setup
+        steps_per_epoch, val_steps, test_steps = self._setup_data_generators(batch_size=batch_size)
+        self._build_model()
+        compile_model()
 
-        logger.info("Starting training loop...")
+        # 2. Callbacks
+        callbacks = get_callbacks()
+
+        # 3. Class weights
+        class_weight_dict = get_class_weights()
+        logger.info(f"[TRAIN] Using class weights: {class_weight_dict}")
+        
+        # 4. Train
+        logger.info("[TRAIN] Entering training loop...")
         self.history = self.model.fit(
             self.train_generator,
             steps_per_epoch=steps_per_epoch,
             epochs=epochs,
             validation_data=self.val_generator,
-            validation_steps=validation_steps,
+            validation_steps=val_steps,
             class_weight=class_weight_dict,
             callbacks=callbacks,
             verbose=verbose
         )
         
-        training_time = time.time() - start_time
-        epochs_trained = len(self.history.history['loss'])
-        logger.info(f"Training completed in {training_time:.2f} seconds ({epochs_trained} epochs)")
-        
-        # Evaluate model
-        logger.info("Evaluating model on test set...")
-        evaluation_results = self.model.evaluate(self.test_generator, verbose=0)
-        metric_names = self.model.metrics_names
-        results_dict = dict(zip(metric_names, evaluation_results))
-        
-        results = {
-            'loss': results_dict['loss'],
-            'accuracy': results_dict['accuracy'],
-            'training_time': training_time,
-            'epochs_trained': len(self.history.history['loss']),
-            'classification_type': 'binary' if self.num_classes == 2 else 'multi-class',
-            'num_classes': self.num_classes,
-            'model_name': self.model_name,
-            'img_size': self.img_size,
-            'batch_size': batch_size,
-            'optimizer': optimizer,
-            'learning_rate': learning_rate
-        }
-        
-        # Add available metrics
-        for metric in ['precision', 'recall', 'auc', 'f1_score']:
-            if metric in results_dict:
-                results[metric] = results_dict[metric]
-        
-        logger.info("Training results:")
-        logger.info(f"  Final test accuracy: {results['accuracy']:.4f}")
-        logger.info(f"  Final test loss: {results['loss']:.4f}")
-        logger.info(f"  Training time: {training_time:.2f} seconds")
-        logger.info(f"  Epochs trained: {epochs_trained}")
-        
+        # 5. Evaluation
+        results = evaluate_training()
+        logger.info(f"[TRAIN] Training complete in {results['training_time']:.2f} seconds.")
+        logger.info(f"[TRAIN] Test Results: Loss={results.get('loss'):.4f}, Accuracy={results.get('accuracy'):.4f}")
         return results
+    
+    def save_history(self, file_path: str = "./results/training_history.json") -> bool:
+        """
+        Saves the training history to a JSON file.
+
+        :param file_path: Path to save the history JSON file.
+        :type file_path: str
+        :returns: True on success, False otherwise.
+        :rtype: bool
+        """
+        if self.history is None:
+            logger.warning("[HISTORY] No training history available to save.")
+            return False
+        
+        # Convert history to pure Python types
+        history_dict = {"history": {k: [float(vv) for vv in v] for k, v in self.history.history.items()}}
+
+        try:
+            os.makedirs(os.path.dirname(file_path), exist_ok=True)
+            with open(file_path, 'w') as f:
+                json.dump(history_dict, f, indent=4)
+            logger.info(f"[HISTORY] Training history saved to {file_path}")
+            return True
+        except Exception as e:
+            logger.error(f"[HISTORY] Error saving training history: {e}")
+            return False
+
+    def load_history(self, file_path: str = "./results/training_history.json") -> bool:
+        """
+        Loads training history from a JSON file.
+        
+        :param file_path: Path to load the history JSON file.
+        :type file_path: str
+        :returns: True on success, False otherwise.
+        :rtype: bool
+        """
+        if not os.path.exists(file_path):
+            logger.warning(f"[HISTORY] History file does not exist: {file_path}")
+            return None
+
+        class History:
+            def __init__(self, history_dict):
+                self.history = history_dict
+                
+        try:
+            with open(file_path, 'r') as f:
+                data = json.load(f)
+            self.history = History(data["history"])
+            logger.info(f"[HISTORY] History loaded succesfully")
+            return True
+        except Exception as e:
+            logger.error(f"[HISTORY] Error loading training history: {e}")
+            return False
     
     def predict(self, image_path: str) -> Tuple[str, float, Dict[str, float]]:
         """
-        Predict class for a single image.
+        Predict the class for a single input image.
         
-        Args:
-            image_path: Path to the image file to classify
-            
-        Returns:
-            Tuple:
-                - predicted_class: Name of the predicted class
-                - confidence: Confidence score for the prediction
-                - probabilities: Dictionary with probabilities for all classes
+        :param image_path: Path to the image file to classify.
+        :type image_path: str
+        :returns: (Predicted class name, confidence score, dictionary of all class probabilities).
+        :rtype: Tuple[str, float, Dict[str, float]]
         """
-        logger.info(f"Making prediction for image: {image_path}")
+        logger.info(f"[PREDICT] Making prediction for image: {image_path}")
         
         if self.model is None:
+            logger.error("[PREDICT] Model not trained or loaded.")
             raise ValueError("Model not trained or loaded")
         if not os.path.exists(image_path):
+            logger.error(f"[PREDICT] Image file not found: {image_path}")
             raise FileNotFoundError(f"Image file not found: {image_path}")
         
         try:
@@ -738,7 +746,7 @@ class Classifier:
             img_array = tf.keras.preprocessing.image.img_to_array(img)
             img_array = np.expand_dims(img_array / 255.0, axis=0)
         except Exception as e:
-            logger.error(f"Error loading/preprocessing image: {e}")
+            logger.error(f"[PREDICT] Error loading/preprocessing image: {e}")
             raise
 
         probs = self.model.predict(img_array, verbose=0)[0]
@@ -751,24 +759,21 @@ class Classifier:
         confidence = float(probs[pred_idx])
         probabilities = {label: float(p) for label, p in zip(self.class_labels, probs)}
 
-        logger.info(f"Predicted class: {predicted_class}, Confidence: {confidence:.2%}")
+        logger.info(f"[PREDICT] Result: Predicted class: {predicted_class}, Confidence: {confidence:.2%}")
         return predicted_class, confidence, probabilities
     
     def evaluate_model(self, return_details: bool = False):
         """
         Evaluate the model on the validation set.
-        Combines compiled metrics (loss, accuracy, precision, recall, etc.)
-        with post-hoc metrics like sensitivity/specificity.
 
-        Args:
-            return_preds: if True, also return raw probabilities, predictions, and labels
-
-        Returns:
-            results: dict with metrics and (optional) predictions
+        :param return_details: If True, returns raw predictions and labels alongside metrics.
+        :type return_details: bool
+        :returns: Dictionary containing evaluation metrics (and optional details).
+        :rtype: Dict
         """
         if self.val_generator is None:
-            logger.warning("val_generator is None - preparing data...")
-            self.setup_data_generators()
+            logger.warning("[PREDICT] val_generator is None. Preparing data...")
+            self._setup_data_generators()
 
         # Standard Keras metrics (loss, acc, precision, recall, etc.)
         keras_results = self.model.evaluate(self.val_generator, verbose=0, return_dict=True)
@@ -810,8 +815,12 @@ class Classifier:
                 "confidences": confs,
                 "true_indices": labels,
             })
-
+        
+        logger.info(f"[PREDICT] Model evaluation on validation set complete.")
         return summary
+    
+    #endregion
+    
     
     #region Generating plotts/heatmaps
     
@@ -821,32 +830,29 @@ class Classifier:
                                  alpha: float = 0.5,
                                  output_dir: str = './gradcam_results') -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
-        Generate Grad-CAM heatmap for model interpretability.
+        Generate Grad-CAM heatmap for model interpretability on a single image.
         
-        Grad-CAM (Gradient-weighted Class Activation Mapping) visualizes which parts
-        of the image are important for the model's prediction by highlighting regions
-        that strongly influence the classification decision.
-        
-        Args:
-            image_path: Path to the input image file
-            conv_layer_name: Name of the convolutional layer to analyze.
-                           If None, automatically uses the last Conv2D layer
-            alpha: Transparency factor for heatmap overlay (0.0-1.0)
-            
-        Returns:
-            Tuple containing:
-                - superimposed_img: Original image with heatmap overlay
-                - heatmap: Raw heatmap visualization
-                - original_img: Original preprocessed image
+        :param image_path: Path to the input image file.
+        :type image_path: str
+        :param conv_layer_name: Name of the convolutional layer to analyze. Uses the last Conv2D layer if None.
+        :type conv_layer_name: Optional[str]
+        :param alpha: Transparency factor for heatmap overlay (0.0-1.0).
+        :type alpha: float
+        :param output_dir: Directory to save the generated heatmap image.
+        :type output_dir: str
+        :returns: (Original image with heatmap overlay, raw heatmap visualization, original preprocessed image).
+        :rtype: Tuple[np.ndarray, np.ndarray, np.ndarray]
+        :raises ValueError: If the model is not trained/loaded.
+        :raises FileNotFoundError: If the image file doesn't exist.
         """
-        logger.info(f"Generating Grad-CAM for image: {image_path}")
-        logger.info(f"  Using conv layer: {conv_layer_name or 'last Conv2D layer'}")
-        logger.info(f"  Alpha (transparency): {alpha}")
-        logger.info(f"  Model: {self.model_name}, Image size: {self.img_size}, Num classes: {self.num_classes}")        
+        logger.info(f"[GRADCAM] Generating Grad-CAM for image: {image_path}")
+        logger.info(f"  Using model: {self.model_name}, Image size: {self.img_size}")        
         
         if self.model is None:
+            logger.error("[GRADCAM] Model has not been trained or loaded.")
             raise ValueError("Model has not been trained or loaded yet.")
         if not os.path.exists(image_path):
+            logger.error(f"[GRADCAM] Image file not found: {image_path}")
             raise FileNotFoundError(f"Image file not found: {image_path}")
 
         os.makedirs(output_dir, exist_ok=True)
@@ -856,7 +862,7 @@ class Classifier:
             img_array = tf.keras.preprocessing.image.img_to_array(img)
             img_array = np.expand_dims(img_array / 255.0, axis=0)
         except Exception as e:
-            logger.error(f"Error loading/preprocessing image: {e}")
+            logger.error(f"[GRADCAM] Error loading/preprocessing image: {e}")
             raise
 
         # Find the last convolutional layer if not specified
@@ -867,12 +873,12 @@ class Classifier:
                     conv_layers.append(layer.name)
             
             if not conv_layers:
-                logger.warning("Could not find any Conv2D layers in the model.")
+                logger.warning("[GRADCAM] Could not find any Conv2D layers in the model.")
                 return None, None, None
             
             conv_layer_name = conv_layers[-1]  # Use the last conv layer
-            logger.info(f"Using last convolutional layer: {conv_layer_name}")
-        
+            logger.info(f"  Analyzing convolutional layer: {conv_layer_name}")
+                
         try:
             # Create Grad-CAM model
             grad_model = Model(
@@ -895,6 +901,7 @@ class Classifier:
             grads = tape.gradient(class_output, conv_outputs)
 
             if grads is None:
+                logger.error(f"[GRADCAM] Gradient is None for layer '{conv_layer_name}'. Check layer existence.")
                 raise ValueError(
                     f"Gradient is None for layer '{conv_layer_name}'. "
                     f"Check that the layer exists and is differentiable."
@@ -942,11 +949,11 @@ class Classifier:
             cv2.imwrite(os.path.join(image_output_dir, f"{image_name}_gradcam.png"), superimposed_img)
             
             logger.info(f"  Grad-CAM results saved to: {image_output_dir}")
-            
+                        
             return superimposed_img, heatmap_colored, original_img
         
         except Exception as e:
-            logger.error(f"Error generating Grad-CAM heatmap: {e}")
+            logger.error(f"[GRADCAM] Error generating Grad-CAM heatmap: {e}")
             raise
     
     def generate_gradcam_heatmap_multiple_layers(self, 
@@ -954,16 +961,24 @@ class Classifier:
                                                  alpha: float = 0.5, 
                                                  output_dir: str = './gradcam_results/multiple_layers') -> None:
         """
-        Test Grad-CAM visualization with multiple convolutional layers. Creates a grid showing Grad-CAM heatmaps for different layers
+        Generates and saves a grid of Grad-CAM heatmaps from multiple convolutional layers.
         
-        Args:
-            image_path: Path to the input image file
-            alpha: Transparency factor for heatmap overlay (0.0-1.0)
+        :param image_path: Path to the input image file.
+        :type image_path: str
+        :param alpha: Transparency factor for heatmap overlay (0.0-1.0).
+        :type alpha: float
+        :param output_dir: Directory to save the layer comparison grid and individual heatmaps.
+        :type output_dir: str
+        :raises ValueError: If the model is not trained/loaded or no conv layers are found.
+        :raises FileNotFoundError: If the image file doesn't exist.
         """
-        logger.info(f"Testing model layers for Grad-CAM: {image_path}")
+        logger.info(f"[GRADCAM] Starting multi-layer Grad-CAM test for image: {image_path}")
+        
         if self.model is None:
+            logger.error("[GRADCAM] Model has not been trained or loaded.")
             raise ValueError("Model has not been trained or loaded yet.")
         if not os.path.exists(image_path):
+            logger.error(f"[GRADCAM] Image file not found: {image_path}")
             raise FileNotFoundError(f"Image file not found: {image_path}")
         
         # Find all convolutional layers
@@ -972,9 +987,10 @@ class Classifier:
             if isinstance(layer, Conv2D):
                 conv_layers.append(layer.name)
         if not conv_layers:
+            logger.error("[GRADCAM] No convolutional layers found in the model.")
             raise ValueError("No convolutional layers found in the model.")
-        logger.info(f"  Found {len(conv_layers)} convolutional layers: {conv_layers}")
-    
+        logger.info(f"  Found {len(conv_layers)} convolutional layers. Analyzing...")    
+        
         # Create output directory
         image_name = os.path.splitext(os.path.basename(image_path))[0]
         comparison_dir = os.path.join(output_dir, f"layer_comparison_{image_name}")
@@ -1007,10 +1023,11 @@ class Classifier:
                 )
                 
             except Exception as e:
-                logger.warning(f"Error generating Grad-CAM for layer {layer_name}: {e}")
+                logger.warning(f"[GRADCAM] Error generating Grad-CAM for layer {layer_name}: {e}")
                 continue
         
         if not valid_layers:
+            logger.error("[GRADCAM] Could not generate Grad-CAM for any layers.")
             raise ValueError("Could not generate Grad-CAM for any layers.")
         
         # Create comparison grid
@@ -1050,23 +1067,54 @@ class Classifier:
             plt.savefig(comparison_path, dpi=300, bbox_inches='tight')
             plt.close()
             
-            logger.info(f"  Layer comparison grid saved to: {comparison_path}")
+            logger.info(f"[GRADCAM] Layer comparison grid saved to: {comparison_path}")
             
         except Exception as e:
-            logger.warning(f"Error creating comparison grid: {e}")
+            logger.warning(f"[GRADCAM] Error creating comparison grid: {e}")
         
-        logger.info(f"  Grad-CAM analysis completed for {len(valid_layers)} layers")
-        logger.info(f"  Results saved in: {comparison_dir}")
+        logger.info(f"[GRADCAM] Multi-layer analysis completed. Results saved in: {output_dir}")
     
     
-    def plot_confusion_matrix(self, normalize: bool = False, save_path: Optional[str] = None):
-        if self.model is None or self.test_generator is None:
-            print("Model or test data not available")
+    def _save_plot(self, plt, file_name: str, save_path: str = "./results"):
+        """
+        Helper function to save a matplotlib plot to a file.
+        
+        :param plt: The matplotlib plot object.
+        :type plt: module
+        :param file_name: Name of the file to save (e.g., 'plot.png').
+        :type file_name: str
+        :param save_path: Directory path where the plot should be saved.
+        :type save_path: str
+        :returns: The absolute path to the saved plot file.
+        :rtype: str
+        """
+        path = os.path.join(save_path, file_name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        plt.savefig(path, dpi=300, bbox_inches="tight")
+        plt.close()
+        logger.info(f"[PLOT] Plot saved to {path}")
+        return path
+    
+    def plot_confusion_matrix(self, normalize: bool = False, save_path: str = "./results"):
+        """
+        Plots and saves the confusion matrix for the test set predictions.
+
+        :param normalize: If True, normalize the matrix to show percentages.
+        :type normalize: bool
+        :param save_path: Directory path where the plot should be saved.
+        :type save_path: str
+        """
+        if self.model is None or self.class_labels is None or self.num_classes is None:
+            logger.warning("[PLOT] Required components (model/classes) not available for confusion matrix.")
             return
 
-        # True & predicted
-        y_true = self.test_generator.classes
-        y_pred = self.model.predict(self.test_generator, verbose=0)
+        if self.val_generator is None:
+            self._setup_data_generators()
+
+        # Calculate
+        labels = list(self.class_labels.values())
+        y_true = self.val_generator.classes
+        y_pred = self.model.predict(self.val_generator, verbose=0)
 
         if self.num_classes == 2:
             y_pred_classes = (y_pred > 0.5).astype(int).flatten()
@@ -1077,8 +1125,10 @@ class Classifier:
         if normalize:
             cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
 
-        labels = list(self.class_labels.values())
+        logger.info(f"Calculated confusion matrix (normalize={normalize}):\n{cm}")
+        logger.info(f"Accuracy: {np.trace(cm) / np.sum(cm):.4f}")
 
+        # Plotting
         plt.figure(figsize=(8, 6))
         sns.heatmap(
             cm,
@@ -1095,91 +1145,36 @@ class Classifier:
         plt.ylabel("True Label", fontsize=12)
         plt.tight_layout()
 
-        save_path = save_path or os.path.join(".", "results", "confusion_matrix.png")
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        plt.close()
+        self._save_plot(plt, "confusion_matrix.png", save_path)
 
-    def _plot_metric(self, ax, epochs, history, metric_name, title):
-        """Helper function to plot a single metric for train and validation sets."""
-        train_metric = history.get(metric_name)
-        val_metric = history.get(f"val_{metric_name}")
-        
-        if train_metric:
-            ax.plot(epochs, train_metric, "b-o", label=f"Train {title}")
-        if val_metric:
-            ax.plot(epochs, val_metric, "r-o", label=f"Validation {title}")
+    def plot_data_distribution(self, save_path: str = "./results"):
+        """
+        Plots and saves the distribution of data across train, validation, and test sets.
 
-        ax.set_title(title, fontsize=14, weight="bold")
-        ax.set_xlabel("Epoch")
-        ax.set_ylabel(title)
-        ax.grid(True, linestyle="--", alpha=0.6)
-        if train_metric or val_metric:
-            ax.legend()
-    
-    def plot_training_history(self, save_path: Optional[str] = None):
-        """Plots the model's training and validation history for key metrics."""
-        if self.history is None:
-            logging.warning("No training history available to plot.")
+        :param save_path: Directory path where the plot should be saved.
+        :type save_path: str
+        """
+        if self.class_labels is None:
+            logger.warning("[PLOT] Required class labels not available for data distribution plot.")
             return
         
-        # save data to json
-        # with open(os.path.join(".", "results", "training_history.json"), 'w') as f:
-        #     json.dump(self.history.history, f, indent=4)
-        # history = self.history.history
-        # epochs = range(1, len(history["loss"]) + 1)
+        if self.test_generator is None or self.val_generator is None or self.train_generator is None:
+            self._setup_data_generators()
         
-        # retrieve history data
-        # with open(os.path.join(".", "results", "training_history.json"), 'r') as f:
-        #     history = json.load(f)
-        # epochs = range(1, len(history["loss"]) + 1)
-        
-        # Define the metrics to plot
-        metrics_to_plot = {
-            "Accuracy": "accuracy",
-            "Loss": "loss",
-            "AUC": "auc",
-            # "Sensitivity": "sensitivity",
-            # "Specificity": "specificity",
-        }
-        
-        # Create a 2x3 grid for the plots
-        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
-        axes = axes.flatten() # Flatten for easy iteration
-
-        # Use the helper to plot each metric
-        for i, (title, metric_name) in enumerate(metrics_to_plot.items()):
-            self._plot_metric(axes[i], epochs, history, metric_name, title)
-            
-        # Turn off the last unused subplot if there's an odd number of plots
-        if len(metrics_to_plot) < len(axes):
-            for i in range(len(metrics_to_plot), len(axes)):
-                axes[i].axis('off')
-
-        plt.tight_layout()
-        
-        # Save the figure
-        save_path = save_path or os.path.join(".", "results", "training_history.png")
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        plt.close()
-
-    def plot_data_distribution(self, train_labels: List, val_labels: List, test_labels: List, save_path: Optional[str] = None):
-        """Plots the distribution of data across train, validation, and test sets."""        
-        labels = [lbl.title() for lbl in self.class_labels.values()]
-        
-        # Calculate counts for each subset
+        # Calculate
+        labels = list(self.class_labels.values())
         datasets = {
-            "Training": train_labels,
-            "Validation": val_labels,
-            "Test": test_labels,
+            "Training": self.train_generator.classes,
+            "Validation": self.val_generator.classes,
+            "Test": self.test_generator.classes,
         }
         class_counts = {
             name: [np.sum(np.array(data) == idx) for idx in self.class_labels.keys()]
             for name, data in datasets.items()
         }
+        
 
-        # --- Plotting as a Stacked Bar Chart (Recommended) ---
+        # Plotting
         fig, ax = plt.subplots(figsize=(10, 6))
         
         bottom = np.zeros(len(datasets))
@@ -1192,201 +1187,242 @@ class Classifier:
         ax.set_title("Data Distribution Across Sets", fontsize=16, weight="bold")
         ax.set_ylabel("Number of Samples")
         ax.legend(title="Class")
-        
         plt.tight_layout()
         
-        # Save the figure
-        bar_save_path = save_path or os.path.join(".", "results", "data_distribution_bar.png")
-        os.makedirs(os.path.dirname(bar_save_path), exist_ok=True)
-        plt.savefig(bar_save_path, dpi=300, bbox_inches="tight")
-        plt.close()
-        
-        # --- Plotting as Pie Charts (As per original code, but improved) ---
-        fig, axes = plt.subplots(1, 4, figsize=(20, 5))
-        
-        # Helper function to show count and percentage
-        def make_autopct(values):
-            def my_autopct(pct):
-                total = sum(values)
-                val = int(round(pct * total / 100.0))
-                return f'{pct:.1f}%\n({val})'
-            return my_autopct
+        self._save_plot(plt, "data_distribution_bar.png", save_path)
 
-        # Plot pie for each data split
-        all_counts = {**class_counts, "Overall Split": [len(train_labels), len(val_labels), len(test_labels)]}
-        pie_labels = {**{k: labels for k in datasets.keys()}, "Overall Split": list(datasets.keys())}
-        
-        for i, (name, counts) in enumerate(all_counts.items()):
-            axes[i].pie(
-                counts,
-                labels=pie_labels[name],
-                autopct=make_autopct(counts),
-                startangle=90,
-            )
-            axes[i].set_title(name, fontsize=14, weight="bold")
+    def plot_images_example(self, save_path: str = "./results"):
+        """
+        Saves a grid of example images from the training set with their labels.
 
-        plt.tight_layout()
-        pie_save_path = save_path or os.path.join(".", "results", "data_distribution_pie.png")
-        os.makedirs(os.path.dirname(pie_save_path), exist_ok=True)
-        plt.savefig(pie_save_path, dpi=300, bbox_inches="tight")
-        plt.close()
-    
-    def plot_model_architecture(self, save_path: Optional[str] = None):
-        """Saves a visualization of the model architecture to a file."""
-        if self.model is None:
-            logging.warning("No model available to plot.")
+        :param save_path: Directory path where the plot should be saved.
+        :type save_path: str
+        """
+        if self.class_labels is None or self.num_classes is None:
+            logger.warning("[PLOT] Required components (train data/classes) not available for example images plot.")
             return
         
-        save_path = save_path or os.path.join(".", "results", f"{self.model_name}_architecture.png")
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        
-        try:
-            tf.keras.utils.plot_model(
-                self.model,
-                to_file=save_path,
-                show_shapes=True,
-                show_dtype=False,
-                show_layer_names=True,
-                rankdir="TB",
-                expand_nested=False,
-                dpi=96
-            )
-            logging.info(f"Model architecture saved to {save_path}")
-        except Exception as e:
-            logging.error(f"Error saving model architecture: {e}")
-    
-    def plot_images_example(self, save_path: Optional[str] = None):
-        """Saves a grid of example images from the training set."""
         if self.train_generator is None:
-            logging.warning("No training data available to plot.")
+            self._setup_data_generators()
+        
+        images, labels = next(self.train_generator)
+        
+        # Plotting
+        plt.figure(figsize=(12, 12))
+        for i in range(min(9, len(images))):
+            plt.subplot(3, 3, i + 1)
+            plt.imshow(images[i])
+            label_idx = np.argmax(labels[i]) if self.num_classes > 2 else int(labels[i])
+            plt.title(self.class_labels.get(label_idx, "Unknown"))
+            plt.axis("off")
+        plt.tight_layout()
+        
+        self._save_plot(plt, "example_images.png", save_path)
+    
+    def plot_model_architecture(self, save_path: str = "./results"):
+        """
+        Saves a visualization of the model architecture to a file using Keras utils.
+
+        :param save_path: Directory path where the plot should be saved.
+        :type save_path: str
+        """
+        if self.model is None:
+            logger.warning("[PLOT] Model not available for plotting model architecture.")
             return
         
-        save_path = save_path or os.path.join(".", "results", f"{self.model_name}_example_images.png")
-        os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        
-        try:
-            images, labels = next(self.train_generator)
-            
-            # Plotting
-            plt.figure(figsize=(12, 12))
-            for i in range(min(9, len(images))):
-                plt.subplot(3, 3, i + 1)
-                plt.imshow(images[i])
-                label_idx = np.argmax(labels[i]) if self.num_classes > 2 else int(labels[i])
-                plt.title(self.class_labels.get(label_idx, "Unknown"))
-                plt.axis("off")
-            
-            plt.tight_layout()
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
-            plt.close()
-            logging.info(f"Example images saved to {save_path}")
-        except Exception as e:
-            logging.error(f"Error saving example images: {e}")
+        # Plotting
+        path = os.path.join(save_path, f"architecture_{self.model_name}_.png")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tf.keras.utils.plot_model(
+            self.model,
+            to_file=path,
+            show_shapes=True,
+            show_dtype=False,
+            show_layer_names=True,
+            rankdir="TB",
+            expand_nested=False,
+            dpi=96
+        )
+        logger.info(f"[PLOT] Model architecture saved to {path}")
     
+    def _plot_metric(self, ax, epochs, history, metric_name, title):
+        """
+        Helper function to plot a single metric for train and validation sets.
+
+        :param ax: Matplotlib axes object to draw on.
+        :param epochs: Array/list of epoch numbers.
+        :param history: Dictionary of training history.
+        :param metric_name: Name of the metric (e.g., 'loss', 'accuracy', 'val_loss').
+        :param title: Title for the plot.
+        """
+        train_metric = history.get(metric_name)
+        val_metric = history.get(f"val_{metric_name}")
+        
+        if train_metric is not None:
+            ax.plot(epochs, train_metric, "b-o", label=f"Train {title}")
+        if val_metric is not None:
+            ax.plot(epochs, val_metric, "r-o", label=f"Validation {title}")
+
+        ax.set_title(title, fontsize=14, weight="bold")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel(title)
+        ax.grid(True, linestyle="--", alpha=0.6)
+        if train_metric is not None or val_metric is not None:
+            ax.legend()
+    
+    def plot_training_history(self, save_path: str = "./results"):
+        """
+        Plots and saves the model's training and validation history for key metrics (loss, accuracy, etc.).
+
+        :param save_path: Directory path where the plot should be saved.
+        :type save_path: str
+        """
+        if self.history is None:
+            logger.warning("[PLOT] Training history not available for plotting history.")
+            return
+        
+        history = self.history.history
+        epochs = range(1, len(history['loss']) + 1)
+        
+        # Plotting
+        metrics_to_plot = {
+            "Accuracy": "accuracy",
+            "Loss": "loss",
+            "AUC": "auc",
+        }
+        
+        fig, axes = plt.subplots(1, 3, figsize=(18, 5))
+        axes = axes.flatten()
+
+        # Use the helper to plot each metric
+        for i, (title, metric_name) in enumerate(metrics_to_plot.items()):
+            self._plot_metric(axes[i], epochs, history, metric_name, title)
+            
+        # Turn off the last unused subplot if there's an odd number of plots
+        if len(metrics_to_plot) < len(axes):
+            for i in range(len(metrics_to_plot), len(axes)):
+                axes[i].axis('off')
+
+        plt.tight_layout()
+        self._save_plot(plt, "training_history.png", save_path)
+
     #endregion
 
 
 def ensemble_testing():
     data_dir = './data'
+    # ./data/ - first final version
+    # ./dataset_processed/ - augmented 50/50 balanced mixed
+    # ./data_test/ - resplitted original
     
     checkpoint_paths = {
         "OwnV3": "../../checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5",
         "OwnV2": "../../checkpoints/Saved/OwnV2.epoch28-val_acc0.9705.hdf5",
-        # "OwnV1": "../../checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
-        # "VGG16": "../../checkpoints/Saved/VGG16.epoch18-val_acc0.9534.hdf5"
-        # "AlexNet": "../../checkpoints/Saved/AlexNet.epoch27-val_acc0.9761.hdf5",
-        # "InceptionV3": "../../checkpoints/Saved/InceptionV3.epoch13-val_acc0.9545.hdf5",
+        "OwnV1": "../../checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
+        "VGG16": "../../checkpoints/Saved/VGG16.epoch18-val_acc0.9534.hdf5",
+        "AlexNet": "../../checkpoints/Saved/AlexNet.epoch27-val_acc0.9761.hdf5"
     }
-    weights = [
-        0.9830, 
-        # 0.9761,
-        # 0.9534,
-        # 0.9761,
-        # 0.9705,
-        0.9545,
-    ] 
+    
+    weights = []
+    for path in checkpoint_paths.values():
+        val_acc_str = path.split("val_acc")[-1].split(".hdf5")[0]
+        weights.append(float(val_acc_str))
+    weights = np.array(weights)
+    weights = weights / np.sum(weights)
+    logger.info(f"Using ensemble weights: {weights}")
     
     def evaluate_ensemble(models_info, data_dir, img_size=(150, 150), weights=None):
         """
-        models_info: dict {model_name: checkpoint_path}
-        Returns: ensemble accuracy
+        Evaluate an ensemble of models on the same dataset.
+        Returns: dict with ensemble accuracy, predictions, and individual results.
         """
         all_probs = []
         true_labels = None
+        individual_results = []
 
+        # Load models and collect predictions
         for name, ckpt in models_info.items():
             clf = Classifier(model_name=name, img_size=img_size, data_dir=data_dir)
             clf.load_model(ckpt)
             res = clf.evaluate_model(return_details=True)
+            
+            # Save per-model results
+            acc = np.mean(np.argmax(res["probs"], axis=1) == res["true_indices"])
+            individual_results.append({"model": name, "accuracy": acc})
+            logger.info(f"  {name} individual accuracy: {acc:.4f}")
+            logger.info(f"  Auto results: {res}")            
 
             all_probs.append(res["probs"])
             if true_labels is None:
                 true_labels = res["true_indices"]
-
-        if weights is None:
-            weights = np.ones(len(all_probs))
-        weights = weights / np.sum(weights)
-
         
+        if weights is None:
+            weights = np.ones(len(all_probs)) / len(all_probs)
+
         # Calculate the weighted average of the probabilities
         avg_probs = np.average(np.stack(all_probs, axis=0), axis=0, weights=weights)
         preds = np.argmax(avg_probs, axis=1)
-        accuracy = np.mean(preds == true_labels)
+        ensemble_acc = np.mean(preds == true_labels)
         
-        return {"accuracy": accuracy, "avg_probs": avg_probs, "preds": preds, "true_labels": true_labels}
+        return {
+            "ensemble_accuracy": ensemble_acc,
+            "avg_probs": avg_probs,
+            "preds": preds,
+            "true_labels": true_labels,
+            "individual_results": individual_results
+        }
     
     results = evaluate_ensemble(checkpoint_paths, data_dir, (150, 150), weights=weights)
-    logger.info("Ensemble evaluation results:")
-    for k, v in results.items():
-        if isinstance(v, (float, int)) and v is not None:
-            logger.info(f"  {k}: {v:.4f}")
+    logger.info("=== Ensemble Evaluation Results ===")
+    logger.info(f"Ensemble accuracy: {results['ensemble_accuracy']:.4f}")
+    for r in results["individual_results"]:
+        logger.info(f"  {r['model']}: {r['accuracy']:.4f}")
 
 def model_testing():
-    # data_dir = './dataset_processed'
     data_dir = './data'
-    # data/ - first final version
-    # dataset_processed/ - augmented 50/50 balanced mixed
-    # data_test/ - resplitted original
+    # ./data/ - first final version
+    # ./dataset_processed/ - augmented 50/50 balanced mixed
+    # ./data_test/ - resplitted original
     
     classifier = Classifier(
         model_name='OwnV3',
-        # img_size=(150, 150),
-        img_size=(224, 224),
+        img_size=(150, 150),
+        # img_size=(224, 224),
         data_dir=data_dir
     )
     
     # Train the model
     # results = classifier.train(
-    #     epochs=100,
+    #     epochs=20,
     #     batch_size=16, 
     #     learning_rate=0.0003,
     # )
+    # classifier.save_history()
+    # logger.info(results)
     
-    if classifier.train_generator is None:
-        classifier.setup_data_generators()
     if classifier.model is None:
-        classifier.build_model()
-    # classifier.plot_confusion_matrix()
-    # classifier.plot_training_history()
-    classifier.plot_data_distribution(
-        train_labels=classifier.train_generator.classes,
-        test_labels=classifier.test_generator.classes,
-        val_labels=classifier.val_generator.classes
-    )
-    classifier.plot_model_architecture()
-    classifier.plot_images_example()
+        classifier.load_model('../../checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5')
+    if classifier.history is None:
+        classifier.load_history()
     
-    # Load the model
-    # classifier.load_model('../../checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5')
-    # classifier.load_model('../../checkpoints/Saved/OwnV2.epoch28-val_acc0.9705.hdf5')
-    # classifier.load_model('../../checkpoints/Saved/AlexNet.epoch27-val_acc0.9761.hdf5')
+    
+    # Plotting
+    classifier.plot_confusion_matrix()
+    classifier.plot_training_history()
+    classifier.plot_data_distribution()
+    classifier.plot_images_example()
+    classifier.plot_model_architecture()
+    
+    
+    # Evaluate model
     # results = classifier.evaluate_model()
     # logger.info("Evaluation results:")
     # for k, v in results.items():
     #     if isinstance(v, (float, int)) and v is not None:
     #         logger.info(f"  {k}: {v:.4f}")
     
-    # Image prediction
+    
+    # Image prediction / heatmap testing
     #             backend/api/classifier/data/train/PNEUMONIA/PNEUMONIA_person1929_bacteria_4839_aug1_rot14.8_bright0.88_cont1.08_blur_color0.94.jpeg
     # OwnV3only - backend/api/classifier/data/train/PNEUMONIA/PNEUMONIA_person1921_bacteria_4828_aug1_rot-6.4_hflip_bright0.83_cont1.18_blur.jpeg
     # GoodMap   - backend/api/classifier/data/train/PNEUMONIA/PNEUMONIA_person418_virus_852_aug1_rot11.9_hflip_bright0.98_color0.91.jpeg
@@ -1401,5 +1437,4 @@ def model_testing():
 if __name__ == "__main__":
     # ensemble_testing()
     model_testing()
-    ...
     
