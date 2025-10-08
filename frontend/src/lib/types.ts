@@ -111,7 +111,7 @@ export interface MedicalCase {
     id: number;
     title: string;
     description: string;
-    status: 'open' | 'closed' | 'monitoring';
+    status: 'open' | 'closed' | 'archived';
     diagnosis_summary: string | null;
     created_at: string;
     updated_at: string;
