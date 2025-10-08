@@ -14,6 +14,7 @@ class MedicalCase(models.Model):
 
     patient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="cases_as_patient")
     primary_doctor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="cases_as_doctor")
+    
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="open")
@@ -85,17 +86,12 @@ class EnsembleResult(models.Model):
     ]
     
     scan = models.OneToOneField(ChestScan, on_delete=models.CASCADE, related_name="ensemble_result")
-        
+    source_analyses = models.ManyToManyField(AIAnalysis, related_name="used_in_ensembles")
+    
     method = models.CharField(max_length=50, choices=METHODS)
     combined_prediction_label = models.CharField(max_length=20, choices=LABEL_CHOICES)
     combined_confidence_score = models.FloatField()
     created_at = models.DateTimeField(auto_now_add=True)
-    
-    # Simple many-to-many - no through model, no weights
-    source_analyses = models.ManyToManyField(
-        AIAnalysis,
-        related_name="used_in_ensembles"
-    )
     
     def __str__(self):
         return f"Ensemble {self.id} - {self.combined_prediction_label} ({self.combined_confidence_score:.2f})"

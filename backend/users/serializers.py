@@ -2,6 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from django.db import transaction
 from .models import User, DoctorProfile, PatientProfile
+from .permissions import IsAdmin, IsDoctor
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:

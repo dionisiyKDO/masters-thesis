@@ -26,11 +26,13 @@ class UserViewSet(viewsets.ModelViewSet):
 class DoctorProfileViewSet(viewsets.ModelViewSet):
     queryset = DoctorProfile.objects.all()
     serializer_class = DoctorProfileSerializer
+    permission_classes = [IsDoctor | IsAdmin]
 
 
 class PatientProfileViewSet(viewsets.ModelViewSet):
     queryset = PatientProfile.objects.all()
     serializer_class = PatientProfileSerializer
+    permission_classes = [IsDoctor | IsAdmin]
 
 
 class RegisterView(generics.CreateAPIView):

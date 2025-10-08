@@ -26,12 +26,8 @@ class EnsembleResultSerializer(serializers.ModelSerializer):
         fields = '__all__'
 
 class DoctorAnnotationSerializer(serializers.ModelSerializer):
-    """
-    Serializer for doctor annotations on scans.
-    
-    Read: Returns full doctor object and scan ID
-    Write: Accepts doctor_id and scan_id for creation/updates
-    """
+    # Read: Returns full doctor object and scan ID
+    # Write: Accepts doctor_id and scan_id for creation/updates
     doctor = UserSerializer(read_only=True)
     scan = serializers.IntegerField(source='scan.id', read_only=True)
     
@@ -106,4 +102,3 @@ class MedicalCaseDetailSerializer(MedicalCaseSerializer):
 
     class Meta(MedicalCaseSerializer.Meta):
         fields = MedicalCaseSerializer.Meta.fields + ['scans']
-
