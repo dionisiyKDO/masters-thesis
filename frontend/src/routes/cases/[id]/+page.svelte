@@ -9,7 +9,11 @@
     const caseId = data.caseId;
 	let selectedScan: ChestScan | null = $state(null);
     let refetchTrigger = $state(0); // Simple trigger to force refetch
-    $inspect(selectedScan)
+
+    let diagnosisText = $state('');
+    let isEditingDiagnosis = $state(false);
+    let isSavingDiagnosis = $state(false);
+    let isUpdatingStatus = $state(false);
 
 	async function fetchCaseDetail(): Promise<MedicalCaseDetail | null> {
 		try {
@@ -39,12 +43,58 @@
             minute: '2-digit'
         });    
     }
+    async function updateCaseStatus(newStatus: string) {
+        if (isUpdatingStatus) return;
+        
+        try {
+            isUpdatingStatus = true;
+            const response = await api.patch(`/cases/${caseId}/`, {
+                status: newStatus
+            });
+            
+            if (!response.ok) throw new Error('Failed to update status');
+            
+            // Refetch to get updated data
+            refetchCase();
+        } catch (err) {
+            console.error('Error updating status:', err);
+            alert('Failed to update case status');
+        } finally {
+            isUpdatingStatus = false;
+        }
+    }
+    async function saveDiagnosis() {
+        if (isSavingDiagnosis) return;
+        
+        try {
+            isSavingDiagnosis = true;
+            const response = await api.patch(`/cases/${caseId}/`, {
+                diagnosis_summary: diagnosisText
+            });
+            
+            if (!response.ok) throw new Error('Failed to save diagnosis');
+            
+            isEditingDiagnosis = false;
+            // Refetch to get updated data
+            refetchCase();
+        } catch (err) {
+            console.error('Error saving diagnosis:', err);
+            alert('Failed to save diagnosis');
+        } finally {
+            isSavingDiagnosis = false;
+        }
+    }
 
 
     // Reactive request that refetches when trigger changes
     $effect(() => {
-        refetchTrigger; // Subscribe to trigger
-        caseDetailReq = fetchCaseDetail();
+        refetchTrigger;
+        caseDetailReq = fetchCaseDetail().then(data => {
+            if (data?.diagnosis_summary) {
+                diagnosisText = data.diagnosis_summary;
+            }
+            return data;
+        });
     });
 
     // Initial request
@@ -81,7 +131,69 @@
                 <!-- Main Header Content -->
                 <div class="p-2">
                     <div class="flex items-center justify-between">
-                        <h1 class="text-2xl font-bold text-card-foreground">{caseDetail.title}</h1>
+                        <div class="flex items-center gap-3">
+                            <h1 class="text-2xl font-bold text-card-foreground">{caseDetail.title}</h1>
+                            
+                            {#if $user?.role === "doctor"}
+                                <div class="relative group">
+                                    <button 
+                                        class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-all
+                                            {caseDetail.status === 'open' ? 'bg-green-100 text-green-700 hover:bg-green-200' : ''}
+                                            {caseDetail.status === 'closed' ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : ''}
+                                            {caseDetail.status === 'archived' ? 'bg-gray-100 text-gray-700 hover:bg-gray-200' : ''}"
+                                        disabled={isUpdatingStatus}
+                                    >
+                                        <span class="w-1.5 h-1.5 rounded-full 
+                                            {caseDetail.status === 'open' ? 'bg-green-500' : ''}
+                                            {caseDetail.status === 'closed' ? 'bg-blue-500' : ''}
+                                            {caseDetail.status === 'archived' ? 'bg-gray-500' : ''}">
+                                        </span>
+                                        {caseDetail.status.charAt(0).toUpperCase() + caseDetail.status.slice(1)}
+                                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                                        </svg>
+                                    </button>
+                                    
+                                    <div class="absolute top-full left-0 mt-1 w-32 bg-card border border-border rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10">
+                                        <div class="py-1">
+                                            <button 
+                                                onclick={() => updateCaseStatus('open')}
+                                                class="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
+                                            >
+                                                <span class="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                                Open
+                                            </button>
+                                            <button 
+                                                onclick={() => updateCaseStatus('closed')}
+                                                class="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
+                                            >
+                                                <span class="w-1.5 h-1.5 rounded-full bg-blue-500"></span>
+                                                Closed
+                                            </button>
+                                            <button 
+                                                onclick={() => updateCaseStatus('archived')}
+                                                class="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
+                                            >
+                                                <span class="w-1.5 h-1.5 rounded-full bg-gray-500"></span>
+                                                Archived
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            {:else}
+                                <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
+                                    {caseDetail.status === 'open' ? 'bg-green-100 text-green-700' : ''}
+                                    {caseDetail.status === 'closed' ? 'bg-blue-100 text-blue-700' : ''}
+                                    {caseDetail.status === 'archived' ? 'bg-gray-100 text-gray-700' : ''}">
+                                    <span class="w-1.5 h-1.5 rounded-full 
+                                        {caseDetail.status === 'open' ? 'bg-green-500' : ''}
+                                        {caseDetail.status === 'closed' ? 'bg-blue-500' : ''}
+                                        {caseDetail.status === 'archived' ? 'bg-gray-500' : ''}">
+                                    </span>
+                                    {caseDetail.status.charAt(0).toUpperCase() + caseDetail.status.slice(1)}
+                                </span>
+                            {/if}
+                        </div>
                         <div class="text-right text-xs text-muted-foreground">Case ID: {caseId}</div>
                     </div>
                     <div class="text-sm text-muted-foreground mb-4">Patient: {caseDetail.patient.first_name} {caseDetail.patient.last_name} | Doctor: {caseDetail.primary_doctor.first_name} {caseDetail.primary_doctor.last_name}</div>
@@ -93,22 +205,66 @@
                             <p class="text-foreground leading-relaxed">{caseDetail.description}</p>
                         </div>
                     {/if}
-                    
-                    <!-- Diagnosis -->
-                    <!-- {#if caseDetail.diagnosis_summary}
-                        <div class="bg-accent/5 border border-accent/20 rounded-lg p-4 mt-4">
-                            <div class="flex items-center gap-2 mb-0">
-                                <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                <h2 class="font-semibold text-muted-foreground">Diagnosis Summary</h2>
-                            </div>
-                            <p class="text-muted-foreground/90 leading-relaxed">{caseDetail.diagnosis_summary}</p>
-                        </div>
-                    {/if} -->
                 </div>
             </div>
 
+            <!-- Diagnosis Section -->
+            <div class="px-6 py-4 bg-card rounded-sm shadow-ms border border-border mb-6">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="flex items-center gap-2">
+                        <svg class="w-4 h-4 text-card-foreground" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        <h2 class="font-semibold text-card-foreground">Diagnosis</h2>
+                    </div>
+                    {#if $user?.role === "doctor"}
+                        {#if !isEditingDiagnosis}
+                            <button 
+                                onclick={() => isEditingDiagnosis = true}
+                                class="text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+                            >
+                                {diagnosisText ? 'Edit' : 'Add Diagnosis'}
+                            </button>
+                        {/if}
+                    {/if}
+                </div>
+                
+                {#if isEditingDiagnosis}
+                    <div class="space-y-3">
+                        <textarea 
+                            bind:value={diagnosisText}
+                            class="w-full min-h-32 px-3 py-2 bg-background border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary/50 resize-y"
+                            placeholder="Enter diagnosis summary..."
+                        ></textarea>
+                        <div class="flex gap-2">
+                            <button 
+                                onclick={saveDiagnosis}
+                                disabled={isSavingDiagnosis}
+                                class="px-4 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors disabled:opacity-50"
+                            >
+                                {isSavingDiagnosis ? 'Saving...' : 'Save'}
+                            </button>
+                            <button 
+                                onclick={() => {
+                                    isEditingDiagnosis = false;
+                                    diagnosisText = caseDetail.diagnosis_summary || '';
+                                }}
+                                class="px-4 py-2 bg-muted text-muted-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </div>
+                {:else}
+                    {#if diagnosisText}
+                        <p class="text-foreground leading-relaxed whitespace-pre-wrap">{diagnosisText}</p>
+                    {:else}
+                        <p class="text-muted-foreground/70 text-sm italic">No diagnosis recorded yet</p>
+                    {/if}
+                {/if}
+            </div>
+
+            
             <!-- Main Content Area -->
             <div class="flex gap-6">
                 <!-- Sidebar -->
