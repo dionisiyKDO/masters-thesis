@@ -105,6 +105,8 @@ export interface ChestScan {
     ai_analyses: AIAnalysis[];
     annotations: DoctorAnnotation[];
     ensemble_result: Ensemble;
+    final_label: string;
+    final_label_set_at: string;
 }
 
 export interface MedicalCase {
