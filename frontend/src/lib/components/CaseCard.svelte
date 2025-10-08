@@ -9,8 +9,8 @@
     <div class="p-5 flex-1">
         <div class="flex justify-between items-start gap-1">
             <h3 class="font-bold text-lg text-card-foreground">{medicalCase.title}</h3>
-            <span class="text-xs font-medium px-2.5 py-0.5 rounded-sm {medicalCase.diagnosis_summary ? 'bg-muted text-muted-foreground' : 'bg-primary text-primary-foreground'}">
-                {medicalCase.diagnosis_summary ? 'diagnosed' : 'open'}
+            <span class="text-xs font-medium px-2.5 py-0.5 rounded-sm {medicalCase.status === 'closed' ? 'bg-destructive text-destructive-foreground' : medicalCase.status === 'archived' ? 'bg-muted text-muted-foreground' : 'bg-primary text-primary-foreground'}">
+                {medicalCase.status}
             </span>
         </div>
         <p class="text-sm text-muted-foreground mt-2 line-clamp-2">{medicalCase.description}</p>
