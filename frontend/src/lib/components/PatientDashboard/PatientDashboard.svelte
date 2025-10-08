@@ -1,7 +1,7 @@
 <!-- lib/components/PatientDashboard.svelte -->
 <script lang="ts">
 	import api from '$lib/api';
-    import CaseCard from './CaseCard.svelte';
+    import CaseCard from '../CaseCard.svelte';
 	import type { MedicalCase } from '$lib/types';
 
 	async function fetchCases(): Promise<MedicalCase[] | null> {
