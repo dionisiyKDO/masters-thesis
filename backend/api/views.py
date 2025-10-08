@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult
-from .serializers import ( MedicalCaseSerializer, MedicalCaseDetailSerializer, DoctorAnnotationSerializer )
+from .serializers import ( MedicalCaseSerializer, MedicalCaseDetailSerializer, DoctorAnnotationSerializer, ChestScanSerializer )
 from .permissions import IsDoctor, IsPatientOfCase, IsDoctorOfCase, IsAdmin
 from .classifier.classifier import Classifier
 from .classifier.config import config_v1 as config
@@ -277,3 +277,35 @@ class DoctorAnnotationViewSet(viewsets.ModelViewSet):
             permission_classes = [IsDoctorOfCase | IsAdmin]
         
         return [permission() for permission in permission_classes]
+
+class ChestScanViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for Chest Scans.
+    
+    Permissions:
+    - Patients: Can view scans related to their cases
+    - Doctors: Can view scans related to their cases
+    - Admins: Full access to all scans
+    """
+    queryset = ChestScan.objects.select_related('case__patient', 'case__primary_doctor').prefetch_related('ai_analyses', 'annotations', 'ensemble_result')
+    serializer_class = ChestScanSerializer
+
+    def get_permissions(self):
+        """Set permissions based on action."""
+        if self.action in ['list', 'retrieve']:
+            permission_classes = [permissions.IsAuthenticated, IsPatientOfCase | IsDoctorOfCase | IsAdmin]
+        else:  # create, update, destroy
+            permission_classes = [IsDoctor | IsAdmin]
+        
+        return [permission() for permission in permission_classes]
+
+    def get_queryset(self):
+        """Filter queryset based on user role."""
+        user = self.request.user
+        
+        if user.role == 'patient':
+            return self.queryset.filter(case__patient=user)
+        elif user.role == 'doctor':
+            return self.queryset.filter(case__primary_doctor=user)
+        
+        return self.queryset # Admins see all scans
