@@ -46,13 +46,11 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
         """Return appropriate serializer based on action."""
         if self.action == 'retrieve':
             return MedicalCaseDetailSerializer
-        # elif self.action == 'list' and self.request.query_params.get('summary', '').lower() == 'true':
-        #     return MedicalCaseSummarySerializer
         return MedicalCaseSerializer
     
     def get_permissions(self):
         """Set permissions based on action."""
-        if self.action in ['list', 'retrieve']:
+        if self.action in ['list', 'retrieve', 'by_patient']:
             permission_classes = [permissions.IsAuthenticated, IsPatientOfCase | IsDoctorOfCase | IsAdmin]
         elif self.action in ['create', 'update', 'partial_update']:
             permission_classes = [IsDoctor | IsAdmin]
@@ -69,8 +67,29 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
             return self.queryset.filter(patient=user)
         elif user.role == 'doctor':
             return self.queryset.filter(primary_doctor=user)
-        # Admins see all cases
-        return self.queryset
+        
+        return self.queryset # Admins see all cases
+
+    @action(detail=False, methods=['get'], url_path='patient/(?P<patient_id>[^/.]+)')
+    def by_patient(self, request, patient_id=None):
+        try:
+            patient_id = int(patient_id)
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "Invalid patient ID format."}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        queryset = self.get_queryset() # self.get_queryset() applies role-based filtering
+        cases = queryset.filter(patient_id=patient_id) # Apply the specific patient ID filter
+        
+        if not cases.exists():
+            return Response(
+                {"detail": "No cases found."}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        serializer = self.get_serializer(cases, many=True)
+        return Response(serializer.data)
 
 
 class ScanUploadView(APIView):
@@ -80,7 +99,7 @@ class ScanUploadView(APIView):
     Processes uploaded images through all active AI models and generates
     ensemble predictions.
     """
-    permission_classes = [permissions.IsAuthenticated, IsDoctor]
+    permission_classes = [IsDoctor]
     parser_classes = [MultiPartParser, FormParser]
 
     def _save_heatmap_to_imagefield(self, array: np.ndarray, instance, field_name="heatmap_path", filename="heatmap.png"):
@@ -253,8 +272,8 @@ class DoctorAnnotationViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         """Set permissions based on action."""
         if self.action in ['list', 'retrieve']:
-            permission_classes = [permissions.IsAuthenticated, IsPatientOfCase | IsDoctorOfCase | IsAdmin]
+            permission_classes = [IsPatientOfCase | IsDoctorOfCase | IsAdmin]
         else:  # create, update, destroy
-            permission_classes = [permissions.IsAuthenticated, IsDoctorOfCase | IsAdmin]
+            permission_classes = [IsDoctorOfCase | IsAdmin]
         
         return [permission() for permission in permission_classes]
