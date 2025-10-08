@@ -34,6 +34,7 @@ class ChestScan(models.Model):
     case = models.ForeignKey(MedicalCase, on_delete=models.CASCADE, related_name="scans")
     image_path = models.ImageField(upload_to="scans/")
     final_label = models.CharField(max_length=20, choices=LABEL_CHOICES, blank=True, null=True)
+    final_label_set_at = models.DateTimeField(blank=True, null=True)
     
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
