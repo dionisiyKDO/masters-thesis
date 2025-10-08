@@ -1,13 +1,13 @@
 <!-- lib/components/DoctorDashboard.svelte -->
 <script lang="ts">
 	import api from '$lib/api';
-	import CaseCard from '../PatientDashboard/CaseCard.svelte';
+	import CaseCard from '../CaseCard.svelte';
 	import FormMedicalCase from './FormMedicalCaseCreate.svelte';
+	import PatientSearch from './PatientSearch.svelte';
 	import type { MedicalCase, Patient } from '$lib/types';
-	import type { installPolyfills } from '@sveltejs/kit/node/polyfills';
 
 	// Tab management
-	let activeTab: 'assigned' | 'patients' | 'analytics' = $state('patients');
+	let activeTab: 'assigned' | 'patients' | 'analytics' = $state('assigned');
 
 	let assignedCases: MedicalCase[] = $state([]);
 
@@ -73,10 +73,13 @@
 	function switchTab(tab: 'assigned' | 'patients' | 'analytics') {
 		activeTab = tab;
 	}
-	function handlePatientSelect(event: Event) {
-		const target = event.target as HTMLSelectElement;
-		const patientId = parseInt(target.value);
-		selectedPatient = patients.find(p => p.id === patientId) || null;
+	function handlePatientSelect(patient: Patient | null) {
+		if (patient === null) {
+			return
+		}
+		selectedPatient = patients.find(p => p.id === patient.id) || null;
+		console.log('selectedPatient', selectedPatient);
+		
 		
 		if (selectedPatient) {
 			patientCasesReq = fetchPatientCases(selectedPatient?.user.id);
@@ -100,7 +103,7 @@
 				: 'text-muted-foreground hover:text-foreground border-transparent'}"
 			onclick={() => switchTab('patients')}
 		>
-			Patient History
+			By patient
 		</button>
 		<button
 			class="border-b-2 px-1 py-4 text-sm font-medium {activeTab === 'assigned'
@@ -116,24 +119,10 @@
 <!-- Patient History Tab -->
 {#if activeTab === 'patients'}
 	<div class="space-y-4">
+		
 		<div class="flex items-center gap-4">
 			<h1 class="text-foreground text-2xl font-bold">Patient Case History</h1>
-			{#await patientsReq then patients}
-				{#if patients}
-					<select
-						class="border-border bg-background text-foreground rounded-md border px-3 py-2"
-						onchange={handlePatientSelect}
-					>
-						<option value="">Select a patient...</option>
-						{#each patients as patient}
-							<option value={patient.id}>
-								{patient.user.first_name}
-								{patient.user.last_name}
-							</option>
-						{/each}
-					</select>
-				{/if}
-			{/await}
+			<PatientSearch {patients} onselect={handlePatientSelect} />
 		</div>
 
 		{#if selectedPatient}
