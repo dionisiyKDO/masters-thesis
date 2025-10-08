@@ -7,9 +7,7 @@ class MedicalCase(models.Model):
     STATUS_CHOICES = [
         ('open', 'Open'),
         ('closed', 'Closed'),
-        ('monitoring', 'Monitoring'),
         ('archived', 'Archived'),
-        ('cancelled', 'Cancelled'),
     ]
 
     patient = models.ForeignKey(User, on_delete=models.CASCADE, related_name="cases_as_patient")
@@ -28,8 +26,15 @@ class MedicalCase(models.Model):
 
 
 class ChestScan(models.Model):
+    LABEL_CHOICES = [
+        ('normal', 'Normal'),
+        ('pneumonia', 'Pneumonia'),
+    ]
+    
     case = models.ForeignKey(MedicalCase, on_delete=models.CASCADE, related_name="scans")
     image_path = models.ImageField(upload_to="scans/")
+    final_label = models.CharField(max_length=20, choices=LABEL_CHOICES, blank=True, null=True)
+    
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
