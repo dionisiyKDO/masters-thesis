@@ -2,7 +2,7 @@
 	import api from '$lib/api';
     import { user } from '$lib/auth.js';
     import ScanDetail from '$lib/components/ScanDetail.svelte';
-    import ScanForm from '$lib/components/ScanForm.svelte';
+    import ScanForm from '$lib/components/DoctorDashboard/FormScanUpload.svelte';
 	import type { MedicalCaseDetail, ChestScan } from '$lib/types';
 
 	let { data } = $props();
@@ -95,7 +95,7 @@
                     {/if}
                     
                     <!-- Diagnosis -->
-                    {#if caseDetail.diagnosis_summary}
+                    <!-- {#if caseDetail.diagnosis_summary}
                         <div class="bg-accent/5 border border-accent/20 rounded-lg p-4 mt-4">
                             <div class="flex items-center gap-2 mb-0">
                                 <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -105,7 +105,7 @@
                             </div>
                             <p class="text-muted-foreground/90 leading-relaxed">{caseDetail.diagnosis_summary}</p>
                         </div>
-                    {/if}
+                    {/if} -->
                 </div>
             </div>
 

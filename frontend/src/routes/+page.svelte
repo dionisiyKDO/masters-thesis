@@ -1,8 +1,8 @@
 <script lang="ts">
     import { user } from '$lib/auth';
-    import PatientDashboard from '$lib/components/PatientDashboard.svelte';
-    import DoctorDashboard from '$lib/components/DoctorDashboard.svelte';
-    import AdminDashboard from '$lib/components/AdminDashboard.svelte';
+    import PatientDashboard from '$lib/components/PatientDashboard/PatientDashboard.svelte';
+    import DoctorDashboard from '$lib/components/DoctorDashboard/DoctorDashboard.svelte';
+    import AdminDashboard from '$lib/components/AdminDashboard/AdminDashboard.svelte';
 </script>
 
 {#if $user}
