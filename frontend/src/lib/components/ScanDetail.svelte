@@ -9,6 +9,7 @@
 	const API_BASE = 'http://localhost:8000';
 	let adding = $state(false);
 	let newAnnotation = $state("");
+	let isUpdatingLabel = $state(false);
 	$inspect(scan)
 
 	async function handleAddAnnotation() {
@@ -30,6 +31,28 @@
 		} catch (err) {
 			console.log(err);
 			return null;
+		}
+	}
+	async function setFinalLabel(label: 'normal' | 'pneumonia') {
+		if (isUpdatingLabel) return;
+		
+		try {
+			isUpdatingLabel = true;
+			const response = await api.patch(`/scans/${scan.id}/`, {
+				final_label: label,
+				final_label_set_at: new Date().toISOString()
+			});
+			
+			if (!response.ok) throw new Error('Failed to set final label');
+			
+			const updatedScan = await response.json();
+			scan.final_label = updatedScan.final_label;
+			scan.final_label_set_at = updatedScan.final_label_set_at;
+		} catch (err) {
+			console.error('Error setting final label:', err);
+			alert('Failed to set final diagnosis');
+		} finally {
+			isUpdatingLabel = false;
 		}
 	}
 
@@ -65,25 +88,6 @@
 				alt="Chest Scan"
 				class="bg-muted/10 rounded-md border-2 border-border w-full min-h-[200px] max-h-[500px] object-contain"
 			/>
-
-			<!-- {#if scan.ai_analyses.length > 0}
-				{#each scan.ai_analyses as analysis}
-					<div>
-						<p class="font-medium text-foreground mb-2">AI Heatmap</p>
-						{#if analysis.heatmap_path}
-							<img
-								src={`${API_BASE}${analysis.heatmap_path}`}
-								alt="AI Heatmap"
-								class="rounded-md border border-border w-full min-h-[150px] max-h-[500px] object-contain"
-							/>
-						{:else}
-							<div class="flex items-center justify-center h-64 bg-muted rounded-md border border-dashed">
-								<p class="text-muted-foreground">No heatmap available</p>
-							</div>
-						{/if}
-					</div>
-				{/each}
-			{/if} -->
 		</div>
 	
 		<!-- AI Predictions -->
@@ -129,6 +133,90 @@
 							Combined result from {scan.ensemble_result.source_analyses.length} models • 
 							Generated on {formatDate(scan.ensemble_result.created_at)}
 						</div>
+					</div>
+				{/if}
+
+				<!-- Doctor's Final Decision -->
+				{#if $user?.role === "doctor"}
+					<div class="bg-gradient-to-r from-accent/10 to-accent/5 rounded-lg border-2 border-accent/30 p-4 mb-4">
+						<div class="flex items-center gap-2">
+							<div class="flex-1">
+								<div class="flex items-center gap-2 mb-3">
+									<span class="font-semibold text-accent">
+										Final Medical Decision
+									</span>
+								</div>
+								
+								{#if scan.final_label}
+									<div class="space-y-2">
+										<div class="flex items-center gap-3">
+											<span class="text-2xl font-bold capitalize {scan.final_label === 'pneumonia' ? 'text-destructive' : 'text-primary'}">
+												{scan.final_label}
+											</span>
+										</div>
+										{#if scan.final_label_set_at}
+											<div class="text-sm text-muted-foreground">
+												Confirmed on {formatDate(scan.final_label_set_at)}
+											</div>
+										{/if}
+									</div>
+								{:else}
+									<div class="space-y-2">
+										<div class="flex items-center gap-3">
+											<span class="text-2xl font-bold capitalize {scan.final_label ? scan.final_label  === 'pneumonia' ? 'text-destructive' : 'text-primary' : 'text-muted'}">
+												___________
+											</span>
+										</div>
+										<div class="text-sm text-muted-foreground">
+											Review the AI analysis and confirm the final diagnosis
+										</div>
+									</div>
+								{/if}
+							</div>
+							
+							<div class="flex gap-2">
+								<button
+									onclick={() => setFinalLabel('normal')}
+									disabled={isUpdatingLabel}
+									class="px-4 py-2 rounded-lg font-medium text-sm transition-all disabled:opacity-50
+										{scan.final_label === 'normal' 
+											? 'bg-primary text-primary-foreground' 
+											: 'bg-muted text-muted-foreground hover:bg-primary/80 hover:text-primary-foreground/80'}"
+								>
+									Normal
+								</button>
+								<button
+									onclick={() => setFinalLabel('pneumonia')}
+									disabled={isUpdatingLabel}
+									class="px-4 py-2 rounded-lg font-medium text-sm transition-all disabled:opacity-50
+										{scan.final_label === 'pneumonia' 
+											? 'bg-destructive text-destructive-foreground' 
+											: 'bg-muted text-muted-foreground hover:bg-destructive/80 hover:text-destructive-foreground/80'}"
+								>
+									Pneumonia
+								</button>
+							</div>
+						</div>
+					</div>
+				{:else if scan.final_label}
+					<!-- Patient view - read only -->
+					<div class="bg-gradient-to-r from-accent/10 to-accent/5 rounded-lg border-2 border-accent/30 p-4">
+						<div class="flex items-center gap-3">
+							<svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+							</svg>
+							<div>
+								<span class="font-semibold text-accent text-sm">Doctor's Final Diagnosis:</span>
+								<span class="text-lg font-bold capitalize ml-2 {scan.final_label === 'pneumonia' ? 'text-red-600' : 'text-green-600'}">
+									{scan.final_label}
+								</span>
+							</div>
+						</div>
+						{#if scan.final_label_set_at}
+							<div class="text-xs text-muted-foreground mt-2 ml-8">
+								Confirmed on {formatDate(scan.final_label_set_at)}
+							</div>
+						{/if}
 					</div>
 				{/if}
 
