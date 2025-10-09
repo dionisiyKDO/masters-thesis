@@ -5,7 +5,6 @@
     let isLoading = $state(true);
     let searchTerm = $state('');
     let isEditModalOpen = $state(false);
-    let isRegisterModalOpen = $state(false);
     let selectedUser: User | null = $state(null);
 
     let filteredUsers = $derived(

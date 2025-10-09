@@ -108,7 +108,7 @@
                 </thead>
                 <tbody>
                     {#each models as model (model.id)}
-                        <tr class="border-b border-border hover:bg-muted/50">
+                        <tr class="border-b border-border hover:bg-muted/30">
                             <td class="px-6 py-4 font-medium">{model.model_name}</td>
                             <td class="px-6 py-4 text-muted-foreground">{model.description}</td>
                             <td class="px-6 py-4 text-muted-foreground">
