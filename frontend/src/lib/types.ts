@@ -25,6 +25,7 @@ export interface User {
     last_name: string
     role: string
     date_joined: string
+    is_active: boolean
 }
 
 export interface Patient {
@@ -65,7 +66,7 @@ export interface AIAnalysis {
 
 export interface ModelVersion {
   id: number
-  uploaded_by_admin: SimpleUser
+  uploaded_by_admin?: SimpleUser
   model_name: string
   storage_uri: string
   description: string
@@ -75,9 +76,18 @@ export interface ModelVersion {
 }
 
 export interface PerformanceMetrics {
-  accuracy: number
-  f1_score: number
-  precision: number
+  accuracy?: number 
+  f1_score?: number
+  precision?: number
+  auc?: number
+}
+
+export interface AuditLog {
+  id: number;
+  user: string;
+  action: string;
+  details: any;
+  created_at: string;
 }
 
 export interface DoctorAnnotation {
