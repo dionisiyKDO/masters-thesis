@@ -73,6 +73,7 @@ export default {
     get: (url: string) => fetchWithAuth(url, { method: 'GET' }),
     post: (url:string, data: any) => fetchWithAuth(url, { method: 'POST', body: JSON.stringify(data) }),
     put: (url: string, data: any) => fetchWithAuth(url, { method: 'PUT', body: JSON.stringify(data) }),
+    patch: (url: string, data: any) => fetchWithAuth(url, { method: 'PATCH', body: JSON.stringify(data) }),
     delete: (url: string) => fetchWithAuth(url, { method: 'DELETE' }),
 
     uploadFile,
