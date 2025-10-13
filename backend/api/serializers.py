@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult
+from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult, AuditLog
 from users.serializers import UserSerializer
 from users.models import User
 
@@ -102,3 +102,9 @@ class MedicalCaseDetailSerializer(MedicalCaseSerializer):
 
     class Meta(MedicalCaseSerializer.Meta):
         fields = MedicalCaseSerializer.Meta.fields + ['scans']
+
+
+class AuditLogSerializer(serializers.ModelSerializer):    
+    class Meta:
+        model = AuditLog
+        fields = '__all__'
