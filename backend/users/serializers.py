@@ -7,7 +7,7 @@ from .permissions import IsAdmin, IsDoctor
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ["id", "username", "email", "first_name", "last_name", "role", "date_joined"]
+        fields = ["id", "username", "email", "first_name", "last_name", "role", "is_active", "date_joined"]
 
 class DoctorProfileSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)
