@@ -5,8 +5,10 @@ from . import views
 app_name = "api"
 router = routers.DefaultRouter()
 router.register(r'cases', views.MedicalCaseViewSet, basename='medicalcase')
-router.register(r'annotations', views.DoctorAnnotationViewSet, basename='doctorannotation')
 router.register(r'scans', views.ChestScanViewSet, basename='chestscan')
+router.register(r'annotations', views.DoctorAnnotationViewSet, basename='doctorannotation')
+router.register(r'models', views.ModelVersionViewSet, basename='modelversion')
+router.register(r'auditlogs', views.AuditLogViewSet, basename='auditlog')
 
 urlpatterns = [
     path('', include(router.urls)),
