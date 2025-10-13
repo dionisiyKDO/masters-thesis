@@ -1,40 +1,116 @@
 <script lang="ts">
+    import type { User } from "$lib/types";
+    import api from "$lib/api";
+
+    interface UsersStats {
+        total_users: number
+        total_doctors: number
+        total_patients: number
+    }
+    interface ModelsStats {
+        total_models: number
+        active_models: number
+    }
+
+    interface DashboardStats {
+        totalUsers: number;
+        totalDoctors: number;
+        totalPatients: number;
+        totalModels: number;
+        activeModels: number;
+        errorsLast24h: number;
+    }
+
+    let userStats: UsersStats | null = $state(null);
+    let modelsStats: ModelsStats | null = $state(null);
+    let auditLogsStats: any[] = $state([]);
+    let auditLogs: any[] = $state([]);
+
+    $inspect(userStats);
+    $inspect(modelsStats);
+    $inspect(auditLogsStats);
+    $inspect(auditLogs);
+
     // Fetch functions
+	async function fetchUserStats(): Promise<UsersStats | null> {
+		try {
+			const response = await api.get('/list/users/stats/');
+			if (!response.ok) throw new Error('Failed to fetch users stats.');
+			const data = await response.json();
+            userStats = data;
+			return data;
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
+	}
+	async function fetchModels(): Promise<ModelsStats | null> {
+		try {
+			const response = await api.get('/models/stats/');
+			if (!response.ok) throw new Error('Failed to fetch models stats.');
+			const data = await response.json();
+            userStats = data;
+			return data;
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
+	}
+	async function fetchAuditLogsStats(): Promise<any | null> {
+		try {
+			const response = await api.get('/auditlogs/recent_stats/');
+			if (!response.ok) throw new Error('Failed to fetch auditlogs stats.');
+			const data = await response.json();
+            auditLogsStats = data;
+			return data;
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
+	}
+
     async function fetchDashboardStats() {
-        await new Promise(resolve => setTimeout(resolve, 100));
+        let usersStats = await fetchUserStats();
+        let modelsStats = await fetchModels();
+        let auditlogsStats = await fetchAuditLogsStats();
+
         return {
-            totalUsers: 135,
-            totalDoctors: 15,
-            totalPatients: 120,
-            activeModels: 3,
-            errorsLast24h: 2,
+            totalUsers: usersStats ? usersStats.total_users : 0,
+            totalDoctors: usersStats ? usersStats.total_doctors : 0,
+            totalPatients: usersStats ? usersStats.total_patients : 0,
+            totalModels: modelsStats ? modelsStats.total_models : 0,
+            activeModels: modelsStats ? modelsStats.active_models : 0,
+            errorsLast24h: auditlogsStats ? auditlogsStats.recent_errors : 0,
         };
     }
 
-    async function fetchRecentActivity() {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        return [
-            { id: 1, action: 'ACTIVATED_MODEL', details: "Admin activated model 'ResNet50-v4'", timestamp: new Date(Date.now() - 3600000) },
-            { id: 2, action: 'REGISTER_DOCTOR', details: "Dr. Evelyn Reed was registered.", timestamp: new Date(Date.now() - 7200000) },
-            { id: 3, action: 'API_ERROR', details: "500 Server Error on /predict endpoint.", timestamp: new Date(Date.now() - 86400000) },
-            { id: 4, action: 'USER_LOGIN', details: "Dr. John Carter logged in.", timestamp: new Date(Date.now() - 90000000) },
-        ];
-    }
+	async function fetchAuditLogs(): Promise<any | null> {
+		try {
+			const response = await api.get('/auditlogs/recent/');
+			if (!response.ok) throw new Error('Failed to fetch auditlogs stats.');
+			const data = await response.json();
+            auditLogs = data.recent_activity;
+			return data.recent_activity;
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
+	}
 
     // Helper functions
     function formatDate(dateString: string) {
         const date = new Date(dateString);
         return date.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
-    } 
-
+    }
+    
     let statsReq: Promise<any> = fetchDashboardStats();
-    let activityReq: Promise<any> = fetchRecentActivity();
+    let activityReq: Promise<any> = fetchAuditLogs();
 </script>
 
 <div class="space-y-6">
     <!-- Quick Stats Section -->
     {#await statsReq}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {#each Array(4) as _}
                 <div class="px-6 py-4 bg-card rounded-lg shadow-sm border border-border animate-pulse">
                     <div class="h-6 bg-muted rounded w-3/4 mb-2"></div>
@@ -43,7 +119,7 @@
             {/each}
         </div>
     {:then stats}
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             <!-- Total Users Card -->
             <div class="px-6 py-4 bg-card rounded-lg shadow-sm border border-border flex justify-between items-center">
                 <div class="flex flex-col items-center">
@@ -57,10 +133,17 @@
             </div>
 
             <!-- Active Models Card -->
-            <div class="px-6 py-4 bg-card rounded-lg shadow-sm border border-border">
-                <h3 class="text-sm font-medium text-muted-foreground">Active Models</h3>
-                <p class="text-3xl font-bold text-card-foreground">{stats.activeModels}</p>
-                <p class="text-xs text-muted-foreground mt-1">Ready for prediction</p>
+            <div class="px-6 py-4 bg-card rounded-lg shadow-sm border border-border flex justify-between items-center">
+                <div>
+                    <h3 class="text-sm font-medium text-muted-foreground">Registered Models</h3>
+                    <p class="text-3xl font-bold text-card-foreground">{stats.totalModels}</p>
+                    <p class="text-xs text-muted-foreground mt-1">Including inactive</p>
+                </div>
+                <div>
+                    <h3 class="text-sm font-medium text-muted-foreground">Active Models</h3>
+                    <p class="text-3xl font-bold text-card-foreground">{stats.activeModels}</p>
+                    <p class="text-xs text-muted-foreground mt-1">Ready for prediction</p>
+                </div>
             </div>
 
             <!-- Errors Card -->
@@ -92,17 +175,17 @@
                 {#each activities as activity}
                     <li class="flex items-center gap-4 p-2 hover:bg-muted/50 rounded-md">
                         <div class="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center {activity.action === 'API_ERROR' ? 'bg-red-100' : 'bg-secondary'}">
-                            {#if activity.action === 'API_ERROR'}
+                            {#if activity.action === 'SYSTEM_ERROR'}
                                 <svg class="w-5 h-5 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                            {:else if activity.action === 'REGISTER_DOCTOR'}
+                            {:else if activity.action === 'CREATED_USER'}
                                 <svg class="w-5 h-5 text-secondary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" /></svg>
                             {:else}
                                 <svg class="w-5 h-5 text-secondary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                             {/if}
                         </div>
                         <div class="flex-1 min-w-0">
-                            <p class="text-sm text-foreground truncate">{activity.details}</p>
-                            <p class="text-xs text-muted-foreground">{formatDate(activity.timestamp)}</p>
+                            <p class="text-sm text-foreground truncate">{activity.details.message}</p>
+                            <p class="text-xs text-muted-foreground">{formatDate(activity.created_at)}</p>
                         </div>
                     </li>
                 {/each}
