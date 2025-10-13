@@ -12,8 +12,16 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation, EnsembleResult
-from .serializers import ( MedicalCaseSerializer, MedicalCaseDetailSerializer, DoctorAnnotationSerializer, ChestScanSerializer )
+from .models import (
+    MedicalCase, ChestScan, ModelVersion, 
+    AIAnalysis, DoctorAnnotation, EnsembleResult, 
+    AuditLog
+    )
+from .serializers import ( 
+    MedicalCaseSerializer, MedicalCaseDetailSerializer, 
+    DoctorAnnotationSerializer, ChestScanSerializer,
+    ModelVersionSerializer, AuditLogSerializer,
+    )
 from .permissions import IsDoctor, IsPatientOfCase, IsDoctorOfCase, IsAdmin
 from .classifier.classifier import Classifier
 from .classifier.config import config_v1 as config
@@ -309,3 +317,46 @@ class ChestScanViewSet(viewsets.ModelViewSet):
             return self.queryset.filter(case__primary_doctor=user)
         
         return self.queryset # Admins see all scans
+
+
+class ModelVersionViewSet(viewsets.ModelViewSet):
+    queryset = ModelVersion.objects.all()
+    serializer_class = ModelVersionSerializer
+    permission_classes = [ IsAdmin ]
+
+    @action(detail=False, methods=["get"], permission_classes=[IsAdmin])
+    def stats(self, request):
+        total_models = ModelVersion.objects.count()
+        active_models = ModelVersion.objects.filter(is_active=True).count()
+        
+
+        return Response({
+            "total_models": total_models,
+            "active_models": active_models,
+        })
+
+class AuditLogViewSet(viewsets.ModelViewSet):
+    queryset = AuditLog.objects.all().order_by('-created_at')
+    serializer_class = AuditLogSerializer
+    permission_classes = [ IsAdmin ]
+    
+    @action(detail=False, methods=["get"], permission_classes=[IsAdmin])
+    def recent_stats(self, request):
+        recent_errors = AuditLog.objects.filter(action='SYSTEM_ERROR').count()
+                
+        return Response({
+            "recent_errors": recent_errors,
+        })
+    
+    @action(detail=False, methods=["get"], permission_classes=[IsAdmin])
+    def recent(self, request):
+        recent_activity = AuditLog.objects.order_by('-created_at')[:10]
+        recent_errors = AuditLog.objects.filter(action='SYSTEM_ERROR').order_by('-created_at')[:10]
+        
+        activity_data = AuditLogSerializer(recent_activity, many=True).data
+        error_data = AuditLogSerializer(recent_errors, many=True).data
+        
+        return Response({
+            "recent_activity": activity_data,
+            "recent_errors": error_data,
+        })
