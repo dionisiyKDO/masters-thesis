@@ -1,4 +1,6 @@
 from rest_framework import viewsets, generics
+from rest_framework.decorators import action
+from rest_framework.response import Response
 from rest_framework.permissions import (AllowAny, IsAuthenticated, IsAdminUser, IsAuthenticatedOrReadOnly)
 from rest_framework_simplejwt.views import TokenObtainPairView
 
@@ -21,6 +23,19 @@ class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all().order_by("-date_joined")
     serializer_class = UserSerializer
     permission_classes = [IsAdmin]
+    
+    
+    @action(detail=False, methods=["get"], permission_classes=[IsAdmin])
+    def stats(self, request):
+        total_users = User.objects.count()
+        total_doctors = User.objects.filter(role="doctor").count()
+        total_patients = User.objects.filter(role="patient").count()
+
+        return Response({
+            "total_users": total_users,
+            "total_doctors": total_doctors,
+            "total_patients": total_patients,
+        })
 
 
 class DoctorProfileViewSet(viewsets.ModelViewSet):
