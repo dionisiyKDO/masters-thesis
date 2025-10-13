@@ -9,7 +9,7 @@ from django.db import transaction
 from users.models import User, DoctorProfile, PatientProfile
 from api.models import (
     MedicalCase, ChestScan, ModelVersion, AIAnalysis, DoctorAnnotation,
-    EnsembleResult
+    EnsembleResult, AuditLog
 )
 
 # --- Configuration ---
@@ -113,6 +113,84 @@ MODELS = [
     
 ]
 
+#  { id: 1, action: 'ACTIVATED_MODEL', details: "Admin activated model 'ResNet50-v4'", timestamp: new Date(Date.now() - 3600000) },
+AUDIT_ACTIONS = [
+    'CREATED_USER', 'DEACTIVATED_USER', 'ACTIVATED_USER',
+    'CREATED_MODEL', 'DEACTIVATED_MODEL', 'ACTIVATED_MODEL',
+    'UPLOADED_SCAN', 'CREATED_CASE', 'UPDATED_CASE', 'DELETED_CASE',
+    'ADDED_ANNOTATION', 'DELETED_ANNOTATION', 'RAN_AI_ANALYSIS',
+    'CREATED_ENSEMBLE', 'SYSTEM_ERROR'
+]
+AUDIT_DETAILS = {
+    'CREATED_USER': [
+        "Admin created user 'dr_smith'",
+        "Admin created user 'pat_jones'",
+        "Admin created user 'dr_williams'",
+        "Admin created user 'pat_brown'",
+    ],
+    'DEACTIVATED_USER': [
+        "Admin deactivated user 'dr_smith'",
+        "Admin deactivated user 'pat_jones'",
+    ],
+    'ACTIVATED_USER': [
+        "Admin activated user 'dr_smith'",
+        "Admin activated user 'pat_jones'",
+    ],
+    'CREATED_MODEL': [
+        "Admin created model 'AlexNet'",
+        "Admin created model 'OwnV1'",
+        "Admin created model 'OwnV2'",
+        "Admin created model 'OwnV3'",
+        "Admin created model 'VGG16'",
+        "Admin created model 'VGG19'",
+    ],
+    'DEACTIVATED_MODEL': [
+        "Admin deactivated model 'OwnV1'",
+        "Admin deactivated model 'DenseNet121'",
+    ],
+    'ACTIVATED_MODEL': [
+        "Admin activated model 'OwnV3'",
+        "Admin activated model 'ResNet50'",
+    ],
+    'UPLOADED_SCAN': [
+        "User 'dr_smith' uploaded scan 'NORMAL_IM-0007-0001_original.jpeg'",
+        "User 'dr_williams' uploaded scan 'NORMAL_IM-0019-0001_original.jpeg'",
+        "User 'pat_jones' uploaded scan 'NORMAL_IM-0025-0001_aug2_hflip_bright1.02.jpeg'",
+    ],
+    'CREATED_CASE': [
+        "Doctor 'dr_smith' created a new medical case for patient 'pat_jones'",
+        "Doctor 'dr_williams' created a new medical case for patient 'pat_brown'",
+    ],
+    'UPDATED_CASE': [
+        "Doctor 'dr_smith' updated diagnosis summary for case #12",
+        "Doctor 'dr_williams' changed status of case #15 to 'monitoring'",
+    ],
+    'DELETED_CASE': [
+        "Admin deleted case #8",
+        "Admin deleted case #21",
+    ],
+    'ADDED_ANNOTATION': [
+        "Doctor 'dr_smith' added annotation to scan #5",
+        "Doctor 'dr_williams' added annotation to scan #9",
+    ],
+    'DELETED_ANNOTATION': [
+        "Doctor 'dr_smith' deleted annotation #3",
+        "Doctor 'dr_williams' deleted annotation #7",
+    ],
+    'RAN_AI_ANALYSIS': [
+        "AI analysis run on scan #5 using model 'OwnV3'",
+        "AI analysis run on scan #9 using model 'VGG16'",
+    ],
+    'CREATED_ENSEMBLE': [
+        "Ensemble result created for scan #5 using majority_vote",
+        "Ensemble result created for scan #9 using average",
+    ],
+    'SYSTEM_ERROR': [
+        "System error: Model loading failed for 'OwnV1'",
+        "System error: Database connection timeout",
+    ],
+}
+
 # Initialize Faker
 fake = Faker()
 
@@ -133,6 +211,7 @@ class Command(BaseCommand):
         doctors = self._create_doctors(options["doctors"])
         patients = self._create_patients(options["patients"])
         models = self._create_models(admin)
+        audit_logs = self._create_audit_logs()
 
         total_cases, total_scans = self._create_cases_and_scans(patients, doctors, models)
         self._create_ensembles(models)
@@ -143,11 +222,14 @@ class Command(BaseCommand):
             f"  - {len(patients)} patients\n"
             f"  - {total_cases} medical cases\n"
             f"  - {total_scans} chest scans\n"
+            f"  - {len(models)} models\n"
+            f"  - {len(audit_logs)} audit logs"
         ))
 
     # ---------------------
     def _clear_db(self):
         EnsembleResult.objects.all().delete()
+        AuditLog.objects.all().delete()
         AIAnalysis.objects.all().delete()
         DoctorAnnotation.objects.all().delete()
         ChestScan.objects.all().delete()
@@ -309,3 +391,16 @@ class Command(BaseCommand):
             # During create(), the object doesn't have a PK yet
             # So you create the object first, then use .set() to establish the M2M relationships
             ensemble.source_analyses.set(analyses)
+
+    def _create_audit_logs(self):
+        logs = []
+        for action, details_list in AUDIT_DETAILS.items():
+            for detail in details_list:
+                log = AuditLog(
+                    user=User.objects.filter(role='admin').first(),
+                    action=action,
+                    details={"message": detail},
+                )
+                logs.append(log)
+        AuditLog.objects.bulk_create(logs)
+        return logs
