@@ -1,7 +1,9 @@
 <script lang="ts">
     import type { User } from "$lib/types";
+    import api from "$lib/api";
+	import { user } from "$lib/auth";
 
-    let users: User[] = $state([]);
+    let users: User[] | null = $state([]);
     let isLoading = $state(true);
     let searchTerm = $state('');
     let isEditModalOpen = $state(false);
@@ -14,18 +16,23 @@
             user.role.toLowerCase().includes(searchTerm.toLowerCase())
         )
     );
+
+    $inspect(users);
+    // $inspect(filteredUsers);
+    $inspect(selectedUser);
     
     // Fetch functions
-    async function fetchUsers(): Promise<User[]> {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        return [
-            { id: 1, username: "aboba1", first_name: 'John', last_name: 'Carter', email: 'j.carter@clinic.com', role: 'doctor', is_active: true, date_joined: '2023-08-15T10:00:00Z' },
-            { id: 2, username: "aboba2", first_name: 'Alice', last_name: 'Williams', email: 'alicew@email.com', role: 'patient', is_active: true, date_joined: '2023-09-01T14:30:00Z' },
-            { id: 3, username: "aboba3", first_name: 'Robert', last_name: 'Miller', email: 'bob.miller@email.com', role: 'patient', is_active: false, date_joined: '2023-07-20T11:00:00Z' },
-            { id: 4, username: "aboba4", first_name: 'Jane', last_name: 'Doe', email: 'jane.doe@clinic.com', role: 'doctor', is_active: true, date_joined: '2022-11-05T09:00:00Z' },
-            { id: 5, username: "aboba5", first_name: 'Emily', last_name: 'Jones', email: 'emily.j@email.com', role: 'patient', is_active: true, date_joined: '2024-01-10T18:00:00Z' },
-        ];
-    }
+    async function fetchUsers(): Promise<User[] | null> {
+		try {
+			const response = await api.get('/list/users/');
+			if (!response.ok) throw new Error('Failed to fetch users.');
+			const data = await response.json();
+			return data;
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
+	}
 
     // Helper functions
     function openEditModal(user: User) {
@@ -33,22 +40,51 @@
         isEditModalOpen = true;
     }
 
-    function handleSaveChanges() {
-        console.log('Saving changes for:', selectedUser);
-        const index = users.findIndex((u: User) => u.id === selectedUser!.id);
-        if (index !== -1) {
-            users[index] = selectedUser!;
+    async function handleSaveChanges() {
+        if (users != null) {
+            console.log('Saving changes for:', selectedUser);
+            
+            const response = await api.patch(`/list/users/${selectedUser!.id}/`, {
+                first_name: selectedUser!.first_name,
+                last_name: selectedUser!.last_name,
+                email: selectedUser!.email
+            });
+            if (!response.ok) {
+                console.error('Failed to update user');
+                return;
+            }
+
+            const index = users.findIndex((u: User) => u.id === selectedUser!.id);
+            if (index !== -1) {
+                users[index] = selectedUser!;
+            }
+            isEditModalOpen = false;
+            selectedUser = null;
+        } else {
+            console.log('handleSaveChanges error: "users" is null');
         }
-        isEditModalOpen = false;
-        selectedUser = null;
     }
 
-    function handleDeactivateUser(userId: number) {
-        console.log('Deactivating user:', userId);
-        const user = users.find(u => u.id === userId);
-        if (user) {
-            user.is_active = !user.is_active;
-            users = [...users];
+    async function handleDeactivateUser(userId: number) {
+        if (users != null) {
+            console.log('Deactivating user:', userId);
+            const user = users.find(u => u.id === userId);
+
+            const response = await api.patch(`/list/users/${userId}/`, {
+                is_active: user!.is_active ? false : true,
+            });
+            if (!response.ok) {
+                console.error('Failed to update user');
+                return;
+            }
+
+            
+            if (user) {
+                user.is_active = !user.is_active;
+                users = [...users];
+            }
+        } else {
+            console.log('handleDeactivateUser error: "users" is null');
         }
     }
 
@@ -94,11 +130,11 @@
             <table class="w-full table-fixed text-sm text-left text-foreground">
                 <thead class="bg-muted/50 text-xs text-muted-foreground uppercase">
                     <tr>
-                        <th class="w-1/4 px-6 py-3">Name</th>
-                        <th class="w-1/4 px-6 py-3">Email</th>
-                        <th class="w-20 px-6 py-3">Role</th>
-                        <th class="w-20 px-6 py-3">Status</th>
-                        <th class="w-1/6 px-6 py-3 text-right">Actions</th>
+                        <th class="w-2/6 min-w-[160px] px-6 py-3">Name</th>
+                        <th class="w-2/6 min-w-[200px] px-6 py-3">Email</th>
+                        <th class="w-1/12 min-w-[90px] px-6 py-3">Role</th>
+                        <th class="w-1/12 min-w-[90px] px-6 py-3">Status</th>
+                        <th class="w-1/6 min-w-[120px] px-6 py-3 text-right">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
