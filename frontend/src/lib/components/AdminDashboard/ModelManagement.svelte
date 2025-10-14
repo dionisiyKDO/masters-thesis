@@ -1,27 +1,44 @@
 <script lang="ts">
     import type { ModelVersion as Model } from "$lib/types";
+    import api from "$lib/api";
     
     let isLoading: boolean = $state(true);
-    let models: Model[] = $state([]);
+    let models: Model[] | null = $state([]);
     let retrainingStatus: 'idle' | 'running' | 'success' | 'failed' = $state('idle');
 
     // Fetch functions
-    async function fetchModels(): Promise<Model[]> {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        return [
-            { id: 1, model_name: 'ResNet50-v4', description: 'Latest version trained on augmented dataset.', is_active: true, performance_metrics: { accuracy: 0.94, auc: 0.97 }, storage_uri: "./models/model1.hdf5", created_at: '2024-05-10T10:00:00Z' },
-            { id: 2, model_name: 'DenseNet121-v2', description: 'Specialized for subtle cases.', is_active: true, performance_metrics: { accuracy: 0.92, auc: 0.98 }, storage_uri: "./models/model2.hdf5", created_at: '2024-03-22T15:00:00Z' },
-            { id: 3, model_name: 'ResNet50-v3', description: 'Previous primary model.', is_active: false, performance_metrics: { accuracy: 0.91, auc: 0.95 }, storage_uri: "./models/model3.hdf5", created_at: '2023-11-15T09:00:00Z' },
-        ];
+    async function fetchModels(): Promise<Model[] | null> {
+		try {
+			const response = await api.get('/models/');
+			if (!response.ok) throw new Error('Failed to fetch users.');
+			const data = await response.json();
+			return data;
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
     }
 
     // Helper functions
-    function handleToggleActive(modelId: number) {
-        console.log(`Toggling active status for model ${modelId}`);
-        const model = models.find(m => m.id === modelId);
-        if (model) {
-            model.is_active = !model.is_active;
-            models = [...models];
+    async function handleToggleActive(modelId: number) {
+        if (models != null) {
+            console.log(`Toggling active status for model ${modelId}`);
+            const model = models.find(u => u.id === modelId);
+
+            const response = await api.patch(`/models/${modelId}/`, {
+                is_active: model!.is_active ? false : true,
+            });
+            if (!response.ok) {
+                console.error('Failed to update model');
+                return;
+            }
+
+            if (model) {
+                model.is_active = !model.is_active;
+                models = [...models];
+            }
+        } else {
+            console.log('handleToggleActive error: "models" is null');
         }
     }
     
@@ -100,24 +117,50 @@
             <table class="w-full table-fixed text-sm text-left text-foreground">
                 <thead class="bg-muted/50 text-xs text-muted-foreground uppercase">
                     <tr>
-                        <th class="w-1/5 px-6 py-3">Model Name</th>
+                        <th class="w-1/5 px-6 py-3">Model</th>
                         <th class="w-2/5 px-6 py-3">Description</th>
                         <th class="w-1/5 px-6 py-3">Metrics</th>
-                        <th class="w-1/10 px-6 py-3">Is Active</th>
+                        <th class="w-1/10 px-6 py-3 text-center">Active</th>
                     </tr>
                 </thead>
                 <tbody>
                     {#each models as model (model.id)}
                         <tr class="border-b border-border hover:bg-muted/30">
-                            <td class="px-6 py-4 font-medium">{model.model_name}</td>
-                            <td class="px-6 py-4 text-muted-foreground">{model.description}</td>
+                            <td class="px-6 py-4 font-medium">
+                                <div class="flex flex-col gap-1.5">
+                                    <span class="font-semibold">{model.model_name}</span>
+                                    <span class="text-xs text-muted-foreground">
+                                        {model.storage_uri.split('/').pop()}
+                                    </span>
+                                    <span class="text-xs text-muted-foreground">
+                                        {new Date(model.created_at).toLocaleDateString()}
+                                    </span>
+                                </div>
+                            </td>
+                            
                             <td class="px-6 py-4 text-muted-foreground">
-                                Acc: {model.performance_metrics.accuracy}, AUC: {model.performance_metrics.auc}
+                                <span>{model.description}</span>
+                            </td>
+
+                            <td class="px-6 py-4 text-muted-foreground">
+                                <div class="flex flex-col gap-0.5">
+                                    {#each Object.entries(model.performance_metrics) as [key, value]}
+                                        <div class="flex items-center gap-1">
+                                            <span class="font-semibold">{key}:</span>
+                                            <span>{value}</span>
+                                        </div>
+                                    {/each}
+                                </div>
                             </td>
                             <td class="px-6 py-4 text-center">
                                 <label for="toggle-{model.id}" class="flex items-center justify-center cursor-pointer">
                                     <div class="relative">
-                                        <input type="checkbox" id="toggle-{model.id}" class="sr-only" checked={model.is_active} onchange={() => handleToggleActive(model.id)}>
+                                        <input
+                                            type="checkbox"
+                                            id="toggle-{model.id}"
+                                            class="sr-only"
+                                            checked={model.is_active}
+                                            onchange={() => handleToggleActive(model.id)} />
                                         <div class="block bg-muted w-10 h-6 rounded-full"></div>
                                         <div class="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition"></div>
                                     </div>
