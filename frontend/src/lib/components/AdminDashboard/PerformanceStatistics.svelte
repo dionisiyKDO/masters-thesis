@@ -1,6 +1,8 @@
 <script lang="ts">
+    import api from "$lib/api";
+
     let isLoading: boolean = $state(true);
-    let stats: PerformanceMetrics = $state({
+    let stats: PerformanceMetrics | null = $state({
         agreementRate: { agree: 0, disagree: 0 },
         performanceByVersion: [],
         confusionMatrix: { tn: 0, fp: 0, fn: 0, tp: 0 }
@@ -31,23 +33,16 @@
     }
 
     // Fetch function
-    async function fetchStats(): Promise<PerformanceMetrics> {
-        await new Promise(resolve => setTimeout(resolve, 100));
-        return {
-            agreementRate: { agree: 53, disagree: 47 },
-            performanceByVersion: [
-                { version: 'ResNet50-v2', agreement: 82 },
-                { version: 'ResNet50-v3', agreement: 89 },
-                { version: 'DenseNet-v1', agreement: 85 },
-                { version: 'ResNet50-v4', agreement: 94 },
-            ],
-            confusionMatrix: {
-                tn: 450, // AI: Normal, Doctor: Normal
-                fp: 25,  // AI: Pneumonia, Doctor: Normal
-                fn: 35,  // AI: Normal, Doctor: Pneumonia
-                tp: 280, // AI: Pneumonia, Doctor: Pneumonia
-            }
-        };
+    async function fetchStats(): Promise<PerformanceMetrics | null> {
+		try {
+			const response = await api.get('/stats/');
+			if (!response.ok) throw new Error('Failed to fetch users.');
+			const data = await response.json();
+			return data;
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
     }
     
     $effect(() => {
