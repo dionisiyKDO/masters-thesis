@@ -104,7 +104,9 @@ class MedicalCaseDetailSerializer(MedicalCaseSerializer):
         fields = MedicalCaseSerializer.Meta.fields + ['scans']
 
 
-class AuditLogSerializer(serializers.ModelSerializer):    
+class AuditLogSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    
     class Meta:
         model = AuditLog
         fields = '__all__'
