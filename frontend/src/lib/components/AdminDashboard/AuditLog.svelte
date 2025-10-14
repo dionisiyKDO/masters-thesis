@@ -1,28 +1,54 @@
 <script lang="ts">
     import type { AuditLog } from "$lib/types";
+    import api from "$lib/api";
 
     let isLoading: boolean = $state(true);
     let searchTerm = $state('');
     let searchDate = $state('');
-    let logs: AuditLog[] = $state([]);
+    let logs: AuditLog[] | null = $state([]);
     let filteredLogs = $derived(
-        logs.filter((log: AuditLog) => 
-            (log.user.toLowerCase().includes(searchTerm.toLowerCase()) || log.action.toLowerCase().includes(searchTerm.toLowerCase())) &&
-            (searchDate === '' || new Date(log.created_at).toDateString() === new Date(searchDate).toDateString())
-        )
+        // logs.filter((log: AuditLog) => 
+        //     (log.user.toLowerCase().includes(searchTerm.toLowerCase()) || log.action.toLowerCase().includes(searchTerm.toLowerCase())) &&
+        //     (searchDate === '' || new Date(log.created_at).toDateString() === new Date(searchDate).toDateString())
+        // )
+
+        logs.filter((log: AuditLog) => {
+            let userStr = `${log.user.first_name ?? ''} ${log.user.last_name ?? ''} ${log.user.email ?? ''} ${log.user.role ?? ''}`;
+            
+            return (
+                userStr.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                log.details.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                log.action.toLowerCase().includes(searchTerm.toLowerCase())
+            ) && (
+                searchDate === '' || new Date(log.created_at).toDateString() === new Date(searchDate).toDateString()
+            );
+        })
     );
     
     // Fetch functions
-    async function fetchLogs(): Promise<AuditLog[]> {
-        await new Promise(resolve => setTimeout(resolve, 800));
-        return [
-            { id: 1, user: 'admin@app.com', action: 'MODEL_ACTIVATED', details: { model_name: 'ResNet50-v4' }, created_at: new Date(Date.now() - 3600000).toLocaleString() },
-            { id: 2, user: 'j.carter@clinic.com', action: 'LOGIN_SUCCESS', details: { ip_address: '192.168.1.10' }, created_at: new Date(Date.now() - 4200000).toLocaleString() },
-            { id: 3, user: 'System', action: 'API_ERROR', details: { endpoint: '/api/predict', status: 500, error: 'Internal Server Error' }, created_at: new Date(Date.now() - 86400000).toLocaleString() },
-            { id: 4, user: 'admin@app.com', action: 'USER_DEACTIVATED', details: { user_id: 'i9j0k1l2', reason: 'Admin action' }, created_at: new Date(Date.now() - 172800000).toLocaleString() },
-            { id: 5, user: 'jane.doe@clinic.com', action: 'DIAGNOSIS_ADDED', details: { case_id: 'c123', patient_id: 'p456' }, created_at: new Date(Date.now() - 259200000).toLocaleString() },
-        ];
-    }
+    // async function fetchLogs(): Promise<AuditLog[]> {
+    //     await new Promise(resolve => setTimeout(resolve, 800));
+    //     return [
+    //         { id: 1, user: 'admin@app.com', action: 'MODEL_ACTIVATED', details: { model_name: 'ResNet50-v4' }, created_at: new Date(Date.now() - 3600000).toLocaleString() },
+    //         { id: 2, user: 'j.carter@clinic.com', action: 'LOGIN_SUCCESS', details: { ip_address: '192.168.1.10' }, created_at: new Date(Date.now() - 4200000).toLocaleString() },
+    //         { id: 3, user: 'System', action: 'API_ERROR', details: { endpoint: '/api/predict', status: 500, error: 'Internal Server Error' }, created_at: new Date(Date.now() - 86400000).toLocaleString() },
+    //         { id: 4, user: 'admin@app.com', action: 'USER_DEACTIVATED', details: { user_id: 'i9j0k1l2', reason: 'Admin action' }, created_at: new Date(Date.now() - 172800000).toLocaleString() },
+    //         { id: 5, user: 'jane.doe@clinic.com', action: 'DIAGNOSIS_ADDED', details: { case_id: 'c123', patient_id: 'p456' }, created_at: new Date(Date.now() - 259200000).toLocaleString() },
+    //     ];
+    // }
+    async function fetchLogs(): Promise<AuditLog[] | null> {
+		try {
+			const response = await api.get('/auditlogs/');
+			if (!response.ok) throw new Error('Failed to fetch users.');
+			const data = await response.json();
+            console.log(data);
+            
+			return data;
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
+	}
 
     // Helper functions
     function formatDate(dateString: string) {
@@ -48,7 +74,7 @@
 
     <!-- Filters -->
     <div class="px-4 py-3 bg-card rounded-lg shadow-sm border border-border flex items-center gap-4">
-       <input type="text" bind:value={searchTerm} placeholder="Filter by user or action..." class="flex-1 bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
+       <input type="text" bind:value={searchTerm} placeholder="Filter by user, action or details..." class="flex-1 bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
        <input type="date" bind:value={searchDate} class="bg-background border border-border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/50">
     </div>
 
@@ -70,14 +96,14 @@
                     {#each filteredLogs as log (log.id)}
                         <tr class="border-b border-border hover:bg-muted/30">
                             <td class="px-6 py-4 text-muted-foreground whitespace-nowrap">{formatDate(log.created_at)}</td>
-                            <td class="px-6 py-4 font-medium">{log.user}</td>
+                            <td class="px-6 py-4 font-medium">{log.user.email}</td>
                             <td class="px-6 py-4">
                                 <span class="px-2 py-0.5 rounded-full text-xs font-medium {log.action.includes('ERROR') ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}">
                                     {log.action}
                                 </span>
                             </td>
                             <td class="px-6 py-4 text-muted-foreground">
-                                <pre class="bg-background/50 p-2 rounded text-xs">{@html JSON.stringify(log.details, null, 2)}</pre>
+                                <p class="bg-background/50 p-2 rounded text-xs">{log.details.message}</p>
                             </td>
                         </tr>
                     {/each}
