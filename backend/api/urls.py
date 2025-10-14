@@ -13,6 +13,7 @@ router.register(r'auditlogs', views.AuditLogViewSet, basename='auditlog')
 urlpatterns = [
     path('', include(router.urls)),
     path("cases/<int:case_id>/scans/upload/", views.ScanUploadView.as_view(), name="scan-upload"),
+    path('stats/', views.StatsView.as_view(), name='stats'),
 ]
 
 # Viewset
