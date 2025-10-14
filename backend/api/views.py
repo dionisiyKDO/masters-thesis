@@ -4,6 +4,7 @@ import numpy as np
 from io import BytesIO
 import cv2
 
+from django.db.models import Count, Q, F
 from django.core.files.base import ContentFile
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets, permissions
@@ -329,7 +330,6 @@ class ModelVersionViewSet(viewsets.ModelViewSet):
         total_models = ModelVersion.objects.count()
         active_models = ModelVersion.objects.filter(is_active=True).count()
         
-
         return Response({
             "total_models": total_models,
             "active_models": active_models,
@@ -360,3 +360,57 @@ class AuditLogViewSet(viewsets.ModelViewSet):
             "recent_activity": activity_data,
             "recent_errors": error_data,
         })
+
+class StatsView(APIView):
+    permission_classes = [ IsAdmin ]
+
+    def get(self, request):
+        total_cases = MedicalCase.objects.count()
+        total_scans = ChestScan.objects.count()
+        analyses = AIAnalysis.objects.select_related('scan', 'model_version')
+        
+        total = analyses.count()
+        agree = analyses.filter(prediction_label=F('scan__final_label')).count()
+        disagree = total - agree
+
+        # Confusion matrix (assuming 'pneumonia' is positive)
+        tn = analyses.filter(prediction_label='normal', scan__final_label='normal').count()
+        fp = analyses.filter(prediction_label='pneumonia', scan__final_label='normal').count()
+        fn = analyses.filter(prediction_label='normal', scan__final_label='pneumonia').count()
+        tp = analyses.filter(prediction_label='pneumonia', scan__final_label='pneumonia').count()
+
+        # Per-model agreement
+        model_stats = (
+            analyses
+            .values('model_version__model_name')
+            .annotate(
+                total=Count('id'),
+                agree=Count('id', filter=Q(prediction_label=F('scan__final_label')))
+            )
+        )
+        performance_by_version = [
+            {
+                'version': m['model_version__model_name'],
+                'total': m['total'],
+                'agree': m['agree'],
+                'agreement': round(m['agree'] / m['total'] * 100, 2),
+            }
+            for m in model_stats
+        ]
+        
+        data = {
+            'agreementRate': {
+                'agree': round(agree / total * 100, 1) if total else 0,
+                'disagree': round(disagree / total * 100, 1) if total else 0
+            },
+            'performanceByVersion': performance_by_version,
+            'confusionMatrix': {
+                'tn': tn,
+                'fp': fp,
+                'fn': fn,
+                'tp': tp,
+            },
+            "total_cases": total_cases,
+            "total_scans": total_scans,
+        }
+        return Response(data)
