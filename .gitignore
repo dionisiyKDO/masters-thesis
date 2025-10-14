@@ -23,6 +23,7 @@ backend/media/scans/*
 backend/media/heatmaps/*
 backend/media/seeding/*
 backend/api/classifier/gradcam_results/
+backend/gradcam_results/
 
 backend/static/frontend/
 backend/staticfiles/
