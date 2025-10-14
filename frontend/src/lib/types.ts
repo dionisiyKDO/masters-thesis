@@ -84,7 +84,7 @@ export interface PerformanceMetrics {
 
 export interface AuditLog {
   id: number;
-  user: string;
+  user: User;
   action: string;
   details: any;
   created_at: string;
