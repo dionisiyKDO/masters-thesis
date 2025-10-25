@@ -1,5 +1,6 @@
 
 import logging
+import threading
 import numpy as np
 import cv2
 
@@ -25,6 +26,7 @@ from .serializers import (
 from .permissions import IsDoctor, IsPatientOfCase, IsDoctorOfCase, IsAdmin
 from .classifier.classifier import Classifier
 from .classifier.config import config_v1 as config
+from .classifier.progress_state import update_progress, get_progress, reset_progress
 
 #region Configure logging
 logging.basicConfig(
@@ -415,3 +417,37 @@ class StatsView(APIView):
             "total_scans": total_scans,
         }
         return Response(data)
+
+
+class TrainModelView(APIView):
+    permission_classes = [IsAdmin]
+
+    def run_training(self):
+        try:
+            classifier = Classifier(
+                model_name='OwnV3',
+                img_size=config['img_size'],
+                data_dir='./api/classifier/data'
+            )
+            results = classifier.train(
+                epochs=2,
+                batch_size=16, 
+                learning_rate=0.0003,
+            )
+            classifier.save_history()
+            logger.info(results)
+        except Exception as e:
+            update_progress(status="error", message=str(e))
+
+    
+    def post(self, request):
+        reset_progress()
+        threading.Thread(target=self.run_training, daemon=True).start()
+        return Response({"status": "started"})
+
+
+class TrainProgresslView(APIView):
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        return Response(get_progress())
