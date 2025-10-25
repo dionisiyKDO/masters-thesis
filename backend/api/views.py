@@ -1,7 +1,6 @@
 
 import logging
 import numpy as np
-from io import BytesIO
 import cv2
 
 from django.db.models import Count, Q, F
@@ -397,11 +396,13 @@ class StatsView(APIView):
             }
             for m in model_stats
         ]
+        performance_by_version.sort(key=lambda x: x['agreement'], reverse=True)
         
         data = {
             'agreementRate': {
                 'agree': round(agree / total * 100, 1) if total else 0,
-                'disagree': round(disagree / total * 100, 1) if total else 0
+                'disagree': round(disagree / total * 100, 1) if total else 0,
+                'total': total,
             },
             'performanceByVersion': performance_by_version,
             'confusionMatrix': {
