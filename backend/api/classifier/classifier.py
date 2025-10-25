@@ -28,6 +28,8 @@ from tensorflow.keras.layers import (
     Input, ReLU, LeakyReLU, Add
 )
 
+from .progress_state import update_progress
+
 #region Env Setup
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 warnings.filterwarnings("ignore", category=UserWarning)
@@ -639,6 +641,53 @@ class Classifier:
                     results[metric] = results_dict[metric]
             return results
 
+        class TrainingProgressCallback(tf.keras.callbacks.Callback):
+            """
+            Custom callback that reports training progress to the shared progress_state.
+            Called automatically by Keras after each epoch.
+            """
+            def __init__(self, total_epochs: int):
+                super().__init__()
+                self.total_epochs = total_epochs
+                self.start_time = None
+
+            def on_train_begin(self, logs=None):
+                self.start_time = time.time()
+                update_progress(status="training", total_epochs=self.total_epochs, epoch=0, message="Training started")
+
+                
+            def on_epoch_end(self, epoch, logs=None):
+                logs = logs or {}
+                elapsed = time.time() - self.start_time
+                avg_epoch_time = elapsed / (epoch + 1)
+                eta = avg_epoch_time * (self.total_epochs - (epoch + 1))
+                epoch_data = {
+                    "epoch": epoch + 1,
+                    "total_epochs": self.total_epochs,
+                    "elapsed": elapsed,
+                    "eta": eta,
+                    "status": "training",
+                    "loss": float(logs.get("loss", 0.0)),
+                    "val_loss": float(logs.get("val_loss", 0.0)),
+                    "acc": float(logs.get("accuracy", 0.0)),
+                    "val_acc": float(logs.get("val_accuracy", 0.0)),
+                    "precision": float(logs.get("precision", 0.0)),
+                    "recall": float(logs.get("recall", 0.0)),
+                    "val_precision": float(logs.get("val_precision", 0.0)),
+                    "val_recall": float(logs.get("val_recall", 0.0)),
+                    "auc": float(logs.get("auc", 0.0)),
+                    "val_auc": float(logs.get("val_auc", 0.0)),
+                    "f1_score": float(logs.get("f1_score", 0.0)),
+                    "val_f1_score": float(logs.get("val_f1_score", 0.0)),
+                    "message": f"Epoch {epoch + 1}/{self.total_epochs} completed"
+                }
+                update_progress(**epoch_data)
+
+
+            def on_train_end(self, logs=None):
+                total_time = time.time() - self.start_time
+                update_progress(status="success", message="Training complete", elapsed=total_time)
+
         # 1. Setup
         steps_per_epoch, val_steps, test_steps = self._setup_data_generators(batch_size=batch_size)
         self._build_model()
@@ -646,6 +695,10 @@ class Classifier:
 
         # 2. Callbacks
         callbacks = get_callbacks()
+        
+        # Announce training start, Add progress callback
+        update_progress(status="training", epoch=0, total_epochs=epochs, message="Starting training")
+        callbacks.append(TrainingProgressCallback(total_epochs=epochs))
 
         # 3. Class weights
         class_weight_dict = get_class_weights()
