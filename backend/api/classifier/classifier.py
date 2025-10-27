@@ -653,9 +653,7 @@ class Classifier:
 
             def on_train_begin(self, logs=None):
                 self.start_time = time.time()
-                update_progress(status="training", total_epochs=self.total_epochs, epoch=0, message="Training started")
-
-                
+            
             def on_epoch_end(self, epoch, logs=None):
                 logs = logs or {}
                 elapsed = time.time() - self.start_time
@@ -666,7 +664,7 @@ class Classifier:
                     "total_epochs": self.total_epochs,
                     "elapsed": elapsed,
                     "eta": eta,
-                    "status": "training",
+                    "status": "running",
                     "loss": float(logs.get("loss", 0.0)),
                     "val_loss": float(logs.get("val_loss", 0.0)),
                     "acc": float(logs.get("accuracy", 0.0)),
@@ -695,9 +693,6 @@ class Classifier:
 
         # 2. Callbacks
         callbacks = get_callbacks()
-        
-        # Announce training start, Add progress callback
-        update_progress(status="training", epoch=0, total_epochs=epochs, message="Starting training")
         callbacks.append(TrainingProgressCallback(total_epochs=epochs))
 
         # 3. Class weights
