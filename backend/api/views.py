@@ -422,17 +422,28 @@ class StatsView(APIView):
 class TrainModelView(APIView):
     permission_classes = [IsAdmin]
 
-    def run_training(self):
+    def run_training(self, model_name='OwnV3', epochs=2, batch_size=16, learning_rate=0.0003, opt='adam'):
         try:
+            logger.info("Starting training thread...")
+            logger.info(f"Parameters: model_name={model_name}, epochs={epochs}, batch_size={batch_size}, learning_rate={learning_rate}")
+            init_progress = {
+                "status": "running",
+                "epoch": 0,
+                "total_epochs": epochs,
+                "message": "Initializing training..."
+            }
+            update_progress(**init_progress)
+            
             classifier = Classifier(
-                model_name='OwnV3',
+                model_name=model_name,
                 img_size=config['img_size'],
                 data_dir='./api/classifier/data'
             )
             results = classifier.train(
-                epochs=2,
-                batch_size=16, 
-                learning_rate=0.0003,
+                epochs=epochs,
+                batch_size=batch_size, 
+                learning_rate=learning_rate,
+                optimizer=opt
             )
             classifier.save_history()
             logger.info(results)
@@ -442,7 +453,12 @@ class TrainModelView(APIView):
     
     def post(self, request):
         reset_progress()
-        threading.Thread(target=self.run_training, daemon=True).start()
+        model_name = request.data.get('model_name', 'OwnV3')
+        epochs = int(request.data.get('epochs', 2))
+        batch_size = int(request.data.get('batch_size', 16))
+        learning_rate = float(request.data.get('learning_rate', 0.0001))
+        opt = request.data.get('optimizer', 'adam')
+        threading.Thread(target=self.run_training, daemon=True, args=(model_name, epochs, batch_size, learning_rate, opt)).start()
         return Response({"status": "started"})
 
 
