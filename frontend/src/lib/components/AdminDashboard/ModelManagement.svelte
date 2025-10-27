@@ -42,13 +42,32 @@
         }
     }
     
-    function startRetraining() {
-        console.log('Starting retraining job...');
-        retrainingStatus = 'running';
-        setTimeout(() => {
-            const success = Math.random() > 0.3; // 70% chance of success
-            retrainingStatus = success ? 'success' : 'failed';
-        }, 2000);
+    let progress = $state({});
+    $inspect(progress);
+
+    async function poll() {
+        console.log('Checking status');
+        const res = await api.get('/train/progress/');
+        progress = await res.json();
+        if (progress.status === 'training') setTimeout(poll, 1000);
+        if (progress.status === 'success') retrainingStatus = 'success';
+    }
+
+    async function startRetraining() {
+		try {
+            console.log('Starting retraining job...');
+			const response = await api.post('/train/', {});
+			if (!response.ok) throw new Error('Failed to fetch users.');
+            retrainingStatus = response.ok ? 'running' : 'failed';
+			const data = await response.json();
+            progress = data;
+            console.log(data);
+            setTimeout(poll, 4000)
+			return data;
+		} catch (err) {
+			console.log(err);
+			return null;
+		}
     }
     
     $effect(() => {
