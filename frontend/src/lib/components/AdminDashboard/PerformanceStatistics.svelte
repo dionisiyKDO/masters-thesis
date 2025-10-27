@@ -1,9 +1,9 @@
 <script lang="ts">
     import api from "$lib/api";
 
-    let isLoading: boolean = $state(true);
+    let isLoading: boolean = $state(false);
     let stats: PerformanceMetrics | null = $state({
-        agreementRate: { agree: 0, disagree: 0 },
+        agreementRate: { agree: 0, disagree: 0, total: 0 },
         performanceByVersion: [],
         confusionMatrix: { tn: 0, fp: 0, fn: 0, tp: 0 }
     });
@@ -20,10 +20,10 @@
     }
 
     interface ConfusionMatrix {
-        tn: number; // AI: Normal, Doctor: Normal
-        fp: number; // AI: Pneumonia, Doctor: Normal
-        fn: number; // AI: Normal, Doctor: Pneumonia
-        tp: number; // AI: Pneumonia, Doctor: Pneumonia
+        tn: number; // CNN: Normal,     Doctor: Normal
+        fp: number; // CNN: Pneumonia,  Doctor: Normal
+        fn: number; // CNN: Normal,     Doctor: Pneumonia
+        tp: number; // CNN: Pneumonia,  Doctor: Pneumonia
     }
 
     interface PerformanceMetrics {
@@ -90,6 +90,10 @@
                         <div class="flex items-center gap-2"><div class="w-3 h-3 rounded-sm bg-muted"></div><div>Disagree</div></div>
                     </div>
                 </div>
+                <div class="text-xs text-muted-foreground text-center mt-2">
+                    {stats.agreementRate.total} doctor–AI comparisons analyzed
+                </div>
+
             </div>
 
             <!-- Performance by Version -->
@@ -100,10 +104,21 @@
                         <div class="w-full">
                             <div class="flex justify-between text-xs text-muted-foreground mb-1">
                                 <span>{model.version}</span>
-                                <span>{model.agreement}%</span>
+                                <span class="flex items-baseline justify-end tabular-nums gap-1 font-mono">
+                                    <span class="font-semibold text-right">{model.agreement.toFixed(1)}%</span>
+                                    <span class="text-muted-foreground">|</span>
+                                    <span class="text-muted-foreground text-right min-w-[3rem]">
+                                        ({model.agree}/{model.total})
+                                    </span>
+                                </span>
                             </div>
                             <div class="h-2.5 w-full rounded-full bg-muted">
                                 <div class="h-2.5 rounded-full bg-primary" style="width: {model.agreement}%"></div>
+                                <!-- <div class="h-2.5 rounded-full"
+                                        class:bg-green-600={model.agreement > 95}
+                                        class:bg-yellow-600={model.agreement <= 95 && model.agreement >= 85}
+                                        class:bg-red-300={model.agreement < 85}
+                                        style="width: {model.agreement}%"></div> -->
                             </div>
                         </div>
                     {/each}
@@ -137,10 +152,18 @@
                                 <td class="p-4 text-center text-lg font-medium bg-muted text-muted-foreground">{stats.confusionMatrix.fp}</td>
                                 <td class="p-4 text-center text-lg font-medium bg-primary text-primary-foreground">{stats.confusionMatrix.tp}</td>
                             </tr>
+                            <tr class="bg-muted/20">
+                                <th colspan="2" class="text-right p-2 font-semibold text-sm text-muted-foreground">Precision</th>
+                                <td class="text-center text-sm font-medium">{(stats.confusionMatrix.tp / (stats.confusionMatrix.tp + stats.confusionMatrix.fp)).toFixed(2)}</td>
+                                <td class="text-center text-sm font-medium">{(stats.confusionMatrix.tn / (stats.confusionMatrix.tn + stats.confusionMatrix.fn)).toFixed(2)}</td>
+                            </tr>
+
                         </tbody>
                     </table>
                 </div>
             </div>
+
+            
         </div>
     {/if}
 </div>
