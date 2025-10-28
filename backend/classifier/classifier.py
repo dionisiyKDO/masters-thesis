@@ -4,34 +4,37 @@ import time
 import json
 import logging
 import warnings
-import numpy as np
-import tensorflow as tf
-from math import ceil
-from pathlib import Path
-from datetime import datetime
-from typing import Dict, Optional, Tuple, Any, List
-from PIL import ImageFile
 
-import seaborn as sns
+import numpy             as np
+import tensorflow        as tf
+import seaborn           as sns
 import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix, classification_report
+
+from math       import ceil
+from pathlib    import Path
+from datetime   import datetime
+from typing     import Dict, Optional, Tuple, Any
+from PIL        import ImageFile
+
+from sklearn.metrics            import confusion_matrix
 from sklearn.utils.class_weight import compute_class_weight
 
 import tensorflow.keras.backend as K
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
-from tensorflow.keras.optimizers import Adam, Adamax, SGD, AdamW
-from tensorflow.keras.optimizers.schedules import CosineDecay
-from tensorflow.keras.models import Sequential, Model
-from tensorflow.keras.layers import (
+from tensorflow.keras.preprocessing.image   import ImageDataGenerator
+from tensorflow.keras.callbacks             import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.optimizers            import Adam, SGD, AdamW
+from tensorflow.keras.optimizers.schedules  import CosineDecay
+from tensorflow.keras.models                import Sequential, Model
+from tensorflow.keras.layers                import (
     Conv2D, MaxPooling2D, Flatten, Dense, Dropout, InputLayer,
     BatchNormalization, GlobalAveragePooling2D,
-    Input, ReLU, LeakyReLU, Add
+    Input, LeakyReLU, Add
 )
+
 try:
     from .progress_state import update_progress 
 except ImportError:
-    from progress_state import update_progress
+    from progress_state  import update_progress
 
 #region Setup env
 BASE_DIR = Path(__file__).resolve().parent
