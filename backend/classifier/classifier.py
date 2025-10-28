@@ -110,6 +110,7 @@ class Classifier:
         self.train_generator = None
         self.val_generator = None
         self.test_generator = None
+        self.best_checkpoint_path = None
         
         self._setup_environment()
     
@@ -618,6 +619,18 @@ class Classifier:
                 callbacks.append(EarlyStopping(monitor='val_auc', patience=patience,
                                             restore_best_weights=True, verbose=verbose, mode='max'))
             if save_best:
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                unique_checkpoint_dir = os.path.join(checkpoint_dir, f"{self.model_name}_{timestamp}")
+                os.makedirs(unique_checkpoint_dir, exist_ok=True)
+                static_filepath = os.path.join(unique_checkpoint_dir, "best_model.hdf5")
+                
+                self.best_checkpoint_path = None
+        
+                callbacks.append(PathTrackingModelCheckpoint(
+                    classifier_instance=self, # Pass 'self' (the classifier instance)
+                    filepath=static_filepath,
+                    monitor='val_accuracy', save_best_only=True, save_weights_only=False, verbose=verbose, mode='max'))
+        
                 os.makedirs(checkpoint_dir, exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 filename = f"{self.model_name}_{timestamp}.epoch{{epoch:02d}}-val_acc{{val_accuracy:.4f}}.hdf5" # filename = 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'
@@ -708,6 +721,23 @@ class Classifier:
             def on_train_end(self, logs=None):
                 total_time = time.time() - self.start_time
                 update_progress(status="success", message="Training complete", elapsed=total_time)
+
+        class PathTrackingModelCheckpoint(ModelCheckpoint):
+            """
+            A custom ModelCheckpoint to track the path of the best saved model file.
+            """
+            def __init__(self, classifier_instance, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.classifier_instance = classifier_instance
+
+            def on_epoch_end(self, epoch, logs=None):
+                super().on_epoch_end(epoch, logs)
+                
+                # Check if the model was saved (i.e., if it was the best so far)
+                if self.save_best_only and self.best == logs.get(self.monitor):
+                    # The saved filepath is guaranteed to be correct due to static naming
+                    self.classifier_instance.best_checkpoint_path = self.filepath
+                    logger.info(f"[CHECKPOINT] Updated best path: {self.filepath}")
 
         # 1. Setup
         steps_per_epoch, val_steps, test_steps = self._setup_data_generators(batch_size=batch_size)
