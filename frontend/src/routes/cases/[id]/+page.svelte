@@ -9,6 +9,8 @@
     const caseId = data.caseId;
 	let selectedScan: ChestScan | null = $state(null);
     let refetchTrigger = $state(0); // Simple trigger to force refetch
+    let caseDetails: MedicalCaseDetail | null = $state(null); // just for inspection
+    $inspect(caseDetails);
 
     let diagnosisText = $state('');
     let isEditingDiagnosis = $state(false);
@@ -26,6 +28,7 @@
             if (!selectedScan && data.scans.length > 0) {
                 selectedScan = data.scans[0];
             }
+            caseDetails = data;
 			return data
 		} catch (err) {
 			console.log(err);
@@ -305,7 +308,9 @@
                                                 {selectedScan?.id === scan.id 
                                                     ? 'bg-secondary border-secondary text-secondary-foreground shadow-sm' 
                                                     : 'bg-muted/50 border-border text-card-foreground hover:bg-muted hover:border-muted-foreground/30'}"
-                                            onclick={() => selectedScan = scan}
+                                            onclick={() => {
+                                                selectedScan = scan;
+                                            }}
                                         >
                                             <div class="flex items-center gap-3">
                                                 <div class="min-w-0 flex-1">
@@ -339,7 +344,7 @@
                 <!-- Scan Detail -->
                 <div class="flex-1 min-w-0">
                     {#if selectedScan}
-                        <ScanDetail scan={selectedScan} />
+                        <ScanDetail scan_case={caseDetail} scan={selectedScan} />
                     {:else if $user?.role === "doctor"}
                         <ScanForm caseId={caseId} onUploaded={refetchCase} />
                     {:else}

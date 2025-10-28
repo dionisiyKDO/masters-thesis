@@ -1,11 +1,17 @@
 <script lang="ts">
 	import AnalysisCard from "$lib/components/AnalysisCard.svelte";
-	import type { ChestScan } from "$lib/types"
+	import type { ChestScan, MedicalCaseDetail } from "$lib/types"
     import { user } from '$lib/auth.js';
 	import api from "$lib/api";
 	import { slide } from "svelte/transition";
 
-	let { scan }: { scan: ChestScan } = $props();
+	interface Props {
+		scan: ChestScan;
+		scan_case: MedicalCaseDetail;
+	}
+
+	let { scan, scan_case }: Props = $props();
+	
 	const API_BASE = 'http://localhost:8000';
 	let adding = $state(false);
 	let newAnnotation = $state("");
@@ -48,6 +54,14 @@
 			const updatedScan = await response.json();
 			scan.final_label = updatedScan.final_label;
 			scan.final_label_set_at = updatedScan.final_label_set_at;
+			
+			scan_case.scans.forEach((s: ChestScan) => {
+				if (s.id === scan.id) {
+					s.final_label = updatedScan.final_label;
+					s.final_label_set_at = updatedScan.final_label_set_at;
+				}
+			});
+
 		} catch (err) {
 			console.error('Error setting final label:', err);
 			alert('Failed to set final diagnosis');
