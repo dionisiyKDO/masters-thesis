@@ -1,47 +1,19 @@
-checkpoints/
-flattened/
-flattened-limited/
-data/
-dataset_processed/
-dataset_test/
-dataset_final/
-data_bone_frac/
-data_mura/
-data_alzheimer/
-data_pneumonia/
-data_pneumonia_augmented_flat/
-data_pneumonia_final_balanced/
-data_pneumonia_final_balanced_og/
-data_pneumonia_final_balanced_test/
-data_pneumonia_final_balanced (Copy)/
-results/
 .vscode/
-augment.py
-redistribute.py
-test-1.py
-backend/media/scans/*
-backend/media/heatmaps/*
-backend/media/seeding/*
-backend/api/classifier/gradcam_results/
-backend/gradcam_results/
+.archive/
+
+backend/classifier/outputs/
+backend/classifier/datasets/
+backend/classifier/augment.py
+backend/classifier/classifier.log
 
 backend/static/frontend/
 backend/staticfiles/
-
-fig.png
-fract.png
-fractno.png
-
-archive.zip
-
-test.py
-
-classifier.log
-.archive/
-
-uv.lock
+backend/media/*
 
 backend/db.sqlite3
+backend/test.py
+
+uv.lock
 
 # Python-generated files
 __pycache__/
