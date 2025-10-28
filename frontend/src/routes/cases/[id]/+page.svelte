@@ -9,8 +9,8 @@
     const caseId = data.caseId;
 	let selectedScan: ChestScan | null = $state(null);
     let refetchTrigger = $state(0); // Simple trigger to force refetch
-    let caseDetails: MedicalCaseDetail | null = $state(null); // just for inspection
-    $inspect(caseDetails);
+    let caseDetail: MedicalCaseDetail | null = $state(null); // just for inspection
+    $inspect(caseDetail);
 
     let diagnosisText = $state('');
     let isEditingDiagnosis = $state(false);
@@ -28,7 +28,7 @@
             if (!selectedScan && data.scans.length > 0) {
                 selectedScan = data.scans[0];
             }
-            caseDetails = data;
+            caseDetail = data;
 			return data
 		} catch (err) {
 			console.log(err);
@@ -46,7 +46,7 @@
             minute: '2-digit'
         });    
     }
-    async function updateCaseStatus(newStatus: string) {
+    async function updateCaseStatus(newStatus: 'open' | 'closed' | 'archived') {
         if (isUpdatingStatus) return;
         
         try {
@@ -57,8 +57,7 @@
             
             if (!response.ok) throw new Error('Failed to update status');
             
-            // Refetch to get updated data
-            refetchCase();
+            caseDetail!.status = newStatus;
         } catch (err) {
             console.error('Error updating status:', err);
             alert('Failed to update case status');
@@ -78,8 +77,7 @@
             if (!response.ok) throw new Error('Failed to save diagnosis');
             
             isEditingDiagnosis = false;
-            // Refetch to get updated data
-            refetchCase();
+            caseDetail!.diagnosis_summary = diagnosisText;
         } catch (err) {
             console.error('Error saving diagnosis:', err);
             alert('Failed to save diagnosis');
@@ -120,7 +118,7 @@
 			Loading case details...
 		</div>
 	</div>
-{:then caseDetail} 
+{:then} 
 	{#if caseDetail}
         <div class="space-y-6">
 
@@ -250,7 +248,7 @@
                             <button 
                                 onclick={() => {
                                     isEditingDiagnosis = false;
-                                    diagnosisText = caseDetail.diagnosis_summary || '';
+                                    diagnosisText = caseDetail?.diagnosis_summary || '';
                                 }}
                                 class="px-4 py-2 bg-muted text-muted-foreground rounded-lg text-sm font-medium hover:bg-muted/80 transition-colors"
                             >
