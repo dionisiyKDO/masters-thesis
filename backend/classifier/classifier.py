@@ -33,22 +33,7 @@ try:
 except ImportError:
     from progress_state import update_progress
 
-#region Env Setup
-ImageFile.LOAD_TRUNCATED_IMAGES = True
-warnings.filterwarnings("ignore", category=UserWarning)
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('classifier.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
-
-# Setup GLOBAL Variables
+#region Setup env
 BASE_DIR = Path(__file__).resolve().parent
 
 DATA_DIR = BASE_DIR / "datasets" / "data"
@@ -62,6 +47,21 @@ GRADCAM_DIR     = OUTPUT_DIR / "gradcam"
 RESULTS_DIR     = OUTPUT_DIR / "results"
 
 IMAGE_SIZE = (150, 150)
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+warnings.filterwarnings("ignore", category=UserWarning)
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(BASE_DIR / 'classifier.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
 #endregion
 
 class Classifier:
