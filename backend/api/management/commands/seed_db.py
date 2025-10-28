@@ -287,7 +287,8 @@ class Command(BaseCommand):
                     scan = ChestScan.objects.create(
                         case=case, 
                         image_path=random.choice(SCANS),
-                        final_label=final_label
+                        final_label=final_label,
+                        final_label_set_at=fake.date_time_this_year(),
                     )
                     # LOGGING: Log scan upload by the doctor
                     self._create_log(doctor, 'UPLOADED_SCAN', f"Doctor '{doctor.username}' uploaded scan {scan.id} for case {case.id}")
