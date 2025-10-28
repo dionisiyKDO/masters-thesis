@@ -1,8 +1,9 @@
-
+import os
+import cv2
+import shutil
 import logging
 import threading
 import numpy as np
-import cv2
 
 from django.db.models import Count, Q, F
 from django.core.files.base import ContentFile
@@ -13,6 +14,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from users.models import User
 from .models import (
     MedicalCase, ChestScan, ModelVersion, 
     AIAnalysis, DoctorAnnotation, EnsembleResult, 
@@ -321,6 +323,32 @@ class ModelVersionViewSet(viewsets.ModelViewSet):
     queryset = ModelVersion.objects.all()
     serializer_class = ModelVersionSerializer
     permission_classes = [ IsAdmin ]
+    
+    def destroy(self, request, *args, **kwargs):
+        model_version = self.get_object()
+        path = model_version.storage_uri
+        logger.info(f"Deleting model version {model_version.id} at path: {path}")
+
+        # Delete file if it exists
+        if os.path.exists(path):
+            os.remove(path)
+            logger.info(f"Deleted model file: {path}")
+        else:
+            logger.warning(f"Model file not found: {path}")
+            
+        # Delete directory if it exists
+        dir_path = os.path.dirname(path)
+        if os.path.exists(dir_path):
+            try:
+                shutil.rmtree(dir_path)
+                logger.info(f"Deleted model directory: {dir_path}")
+            except Exception as e:
+                logger.error(f"Failed to delete model directory {dir_path}: {e}")
+        else:
+            logger.warning(f"Model directory not found: {dir_path}")
+
+        model_version.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=False, methods=["get"], permission_classes=[IsAdmin])
     def stats(self, request):
@@ -439,6 +467,32 @@ class TrainModelView(APIView):
                 learning_rate=learning_rate,
                 optimizer=opt
             )
+            evaluate_results = classifier.evaluate_model()
+                
+            final_checkpoint_path = classifier.best_checkpoint_path
+
+            if final_checkpoint_path:
+                admin = User.objects.filter(role='admin').first()
+                ModelVersion.objects.create(
+                    uploaded_by_admin=admin,
+                    model_name=model_name,
+                    storage_uri=final_checkpoint_path,
+                    description=f"Model trained with {epochs} epochs, batch size {batch_size}, learning rate {learning_rate}, optimizer {opt}.",
+                    performance_metrics={
+                        "accuracy": round(evaluate_results.get('accuracy', 0.0), 4),
+                        "loss": round(evaluate_results.get('loss', 0.0), 4),
+                        "auc": round(evaluate_results.get('auc', 0.0), 4),
+                        "sensitivity": round(evaluate_results.get('sensitivity', 0.0), 4),
+                        "specificity": round(evaluate_results.get('specificity', 0.0), 4),
+                    },
+                    is_active=True,
+                )
+                    
+                logger.info(f"[TRAIN] Model version saved at {final_checkpoint_path}")
+            else:
+                logger.warning("[TRAIN] No checkpoint path found; model version not saved.")
+                
+                
             classifier.save_history()
             logger.info(results)
         except Exception as e:
