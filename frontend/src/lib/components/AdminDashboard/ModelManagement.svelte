@@ -58,6 +58,21 @@
         }
     }
 
+    async function handleDelete(modelId: number) {
+        if (models != null) {
+            console.log(`Deleting model ${modelId}`);
+            const response = await api.delete(`/models/${modelId}/`);
+            if (!response.ok) {
+                console.error('Failed to delete model');
+                return;
+            }
+
+            models = models.filter(m => m.id !== modelId);
+        } else {
+            console.log('handleDelete error: "models" is null');
+        }
+    }
+
     async function startRetraining() {
 		try {
             console.log('Starting retraining job...');
@@ -516,9 +531,10 @@
                 <thead class="bg-muted/50 text-xs text-muted-foreground uppercase">
                     <tr>
                         <th class="w-1/5 px-6 py-3">Model</th>
-                        <th class="w-2/5 px-6 py-3">Description</th>
+                        <th class="w-3/10 px-6 py-3">Description</th>
                         <th class="w-1/5 px-6 py-3">Metrics</th>
                         <th class="w-1/10 px-6 py-3 text-center">Active</th>
+                        <th class="w-1/10 px-6 py-3">Delete</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -563,6 +579,14 @@
                                         <div class="dot absolute left-1 top-1 bg-white w-4 h-4 rounded-full transition"></div>
                                     </div>
                                 </label>
+                            </td>
+                            <td class="px-6 py-4">
+                                <button
+                                    class="text-destructive hover:underline text-sm"
+                                    onclick={() => handleDelete(model.id)}
+                                >
+                                    Delete
+                                </button>
                             </td>
                         </tr>
                     {/each}
