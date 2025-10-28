@@ -1,6 +1,5 @@
 # backend/api/management/commands/seed_db.py
 import random
-from datetime import date
 from faker import Faker
 from collections import Counter
 
@@ -21,8 +20,7 @@ MAX_CASES_PER_PATIENT = 3
 MAX_SCANS_PER_CASE = 5
 MAX_ANNOTATIONS_PER_SCAN = 2
 
-# --- Probabilities for realistic data ---
-# (0.8 -> 80% chance)
+# Probabilities for realistic data
 PROB_AI_AGREES_WITH_BASE = 0.90
 PROB_FINAL_LABEL_AGREES_WITH_BASE = 0.80
 
@@ -48,49 +46,49 @@ SCANS = [
 MODELS = [
     {
         "name": "AlexNet",
-        "uri": "./checkpoints/Saved/AlexNet.epoch27-val_acc0.9761.hdf5",
+        "uri": "/home/dionisiy/masters-thesis/backend/classifier/outputs/checkpoints/Saved/AlexNet.epoch27-val_acc0.9761.hdf5",
         "desc": "AlexNet based model, fast but less accurate than newer architectures.",
         "metrics": {"accuracy": 0.9761, "f1_score": 0.88, "precision": 0.89},
         "active": True
     },
     {
         "name": "OwnV1",
-        "uri": "./checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
+        "uri": "/home/dionisiy/masters-thesis/backend/classifier/outputs/checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
         "desc": "Initial release of the OwnV1 model based on a custom CNN architecture.",
         "metrics": {"accuracy": 0.9761, "f1_score": 0.89, "precision": 0.90},
         "active": False # An older, inactive model
     },
     {
         "name": "OwnV2",
-        "uri": "./checkpoints/Saved/OwnV2.epoch28-val_acc0.9705.hdf5",
+        "uri": "/home/dionisiy/masters-thesis/backend/classifier/outputs/checkpoints/Saved/OwnV2.epoch28-val_acc0.9705.hdf5",
         "desc": "Second version of the custom CNN architecture with improvements over V1.",
         "metrics": {"accuracy": 0.9705, "f1_score": 0.90, "precision": 0.91},
         "active": True
     },
     {
         "name": "OwnV3",
-        "uri": "./checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5",
+        "uri": "/home/dionisiy/masters-thesis/backend/classifier/outputs/checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5",
         "desc": "Latest version of the custom CNN architecture with best performance.",
         "metrics": {"accuracy": 0.9830, "f1_score": 0.91, "precision": 0.92},
         "active": True
     },
     {
         "name": "VGG16",
-        "uri": "./checkpoints/Saved/VGG16.epoch18-val_acc0.9534.hdf5",
+        "uri": "/home/dionisiy/masters-thesis/backend/classifier/outputs/checkpoints/Saved/VGG16.epoch18-val_acc0.9534.hdf5",
         "desc": "VGG16 based model, similar performance to InceptionV3 but slower inference.",
         "metrics": {"accuracy": 0.9534, "f1_score": 0.86, "precision": 0.87},
         "active": True
     },
     {
         "name": "VGG19",
-        "uri": "./checkpoints/Saved/VGG19.epoch29-val_acc0.9489.hdf5",
+        "uri": "/home/dionisiy/masters-thesis/backend/classifier/outputs/checkpoints/Saved/VGG19.epoch29-val_acc0.9489.hdf5",
         "desc": "VGG19 based model with slightly lower accuracy than VGG16.",
         "metrics": {"accuracy": 0.9489, "f1_score": 0.85, "precision": 0.86},
         "active": True
     },
     # {
     #     "name": "ResNet50",
-    #     "uri": "./checkpoints/Saved/ResNet50.epoch22-val_acc0.8818.hdf5",
+    #     "uri": "/home/dionisiy/masters-thesis/backend/classifier/outputs/checkpoints/Saved/ResNet50.epoch22-val_acc0.8818.hdf5",
     #     "desc": "ResNet50 based model with moderate performance.",
     #     "metrics": {"accuracy": 0.8818, "f1_score": 0.75, "precision": 0.76},
     #     "active": True
@@ -139,9 +137,7 @@ class Command(BaseCommand):
             f"  - {total_logs} audit logs"
         ))
 
-    # ---------------------
-    # --- Helper Methods ---
-    # ---------------------
+    #region Helper Methods
 
     def _clear_db(self):
         EnsembleResult.objects.all().delete()
@@ -279,40 +275,38 @@ class Command(BaseCommand):
                 for i in range(random.randint(2, MAX_SCANS_PER_CASE)):
                     total_scans += 1
 
-                    # --- Start Realistic Label Generation ---
-                    # 1. Determine a "base truth" for this scan
+                    # Determine a "base truth" for this scan
                     base_scan_label = random.choice(ai_labels)
                     
-                    # 2. Determine the doctor's final_label (mostly matches base truth)
+                    # Determine the doctor's final_label (mostly matches base truth)
                     if random.random() < PROB_FINAL_LABEL_AGREES_WITH_BASE:
                         final_label = base_scan_label
                     else: # Doctor disagrees with the consensus
                         final_label = "pneumonia" if base_scan_label == "normal" else "normal"
-                    # --- End Realistic Label Generation ---
 
                     scan = ChestScan.objects.create(
                         case=case, 
                         image_path=random.choice(SCANS),
-                        final_label=final_label  # <-- Set the realistic final_label
+                        final_label=final_label
                     )
                     # LOGGING: Log scan upload by the doctor
                     self._create_log(doctor, 'UPLOADED_SCAN', f"Doctor '{doctor.username}' uploaded scan {scan.id} for case {case.id}")
 
                     # Each scan gets an AI analysis from ACTIVE models
                     for model in active_models:
-                        # 3. AI models mostly agree with the "base truth"
+                        # AI models mostly agree with the "base truth"
                         if random.random() < PROB_AI_AGREES_WITH_BASE:
                             prediction_label = base_scan_label
                             confidence = round(random.uniform(0.80, 0.99), 4)
                         else: # Model "disagrees"
                             prediction_label = "pneumonia" if base_scan_label == "normal" else "normal"
-                            confidence = round(random.uniform(0.55, 0.75), 4) # Lower confidence
+                            confidence = round(random.uniform(0.55, 0.75), 4)
 
                         AIAnalysis.objects.create(
                             scan=scan,
                             model_version=model,
-                            prediction_label=prediction_label,  # <-- More realistic label
-                            confidence_score=confidence,      # <-- More realistic confidence
+                            prediction_label=prediction_label,
+                            confidence_score=confidence,
                             heatmap_path=f"heatmaps/scan_{scan.id}_model_{model.id}.png",
                             heatmap_type="gradcam",
                         )
@@ -343,7 +337,6 @@ class Command(BaseCommand):
 
             method = random.choice(methods)
 
-            # --- Start Realistic Ensemble Calculation ---
             # Use Counter to find the most common prediction_label
             label_votes = Counter([a.prediction_label for a in analyses])
             
@@ -353,7 +346,7 @@ class Command(BaseCommand):
             # `most_common(1)` returns [('label', count)]
             combined_prediction_label = label_votes.most_common(1)[0][0]
 
-            # Calculate average confidence *for the winning label*
+            # Calculate average confidence for the winning label
             winning_confidences = [
                 a.confidence_score 
                 for a in analyses 
@@ -365,13 +358,12 @@ class Command(BaseCommand):
             else:
                 # Fallback: average all (shouldn't happen, but safe)
                 conf = round(sum(a.confidence_score for a in analyses) / len(analyses), 4)
-            # --- End Realistic Ensemble Calculation ---
 
             ensemble = EnsembleResult.objects.create(
                 scan=scan,
                 method=method,
-                combined_prediction_label=combined_prediction_label, # <-- Realistic label
-                combined_confidence_score=conf,                      # <-- Realistic confidence
+                combined_prediction_label=combined_prediction_label,
+                combined_confidence_score=conf,
             )
             
             # Set M2M relationship
