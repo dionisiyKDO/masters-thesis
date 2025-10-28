@@ -105,7 +105,7 @@
 		</div>
 	
 		<!-- AI Predictions -->
-		{#if scan.ai_analyses && scan.ai_analyses.length > 0}
+		{#if scan.ai_analyses && scan.ai_analyses.length > 0 && $user?.role === "doctor"}
 			<div class="space-y-2">
 				<h4 class="text-sm font-medium text-muted-foreground uppercase tracking-wide ml-3 flex items-center gap-2">
 					<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -212,26 +212,6 @@
 							</div>
 						</div>
 					</div>
-				{:else if scan.final_label}
-					<!-- Patient view - read only -->
-					<div class="bg-gradient-to-r from-accent/10 to-accent/5 rounded-lg border-2 border-accent/30 p-4">
-						<div class="flex items-center gap-3">
-							<svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-								<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-							</svg>
-							<div>
-								<span class="font-semibold text-accent text-sm">Doctor's Final Diagnosis:</span>
-								<span class="text-lg font-bold capitalize ml-2 {scan.final_label === 'pneumonia' ? 'text-red-600' : 'text-green-600'}">
-									{scan.final_label}
-								</span>
-							</div>
-						</div>
-						{#if scan.final_label_set_at}
-							<div class="text-xs text-muted-foreground mt-2 ml-8">
-								Confirmed on {formatDate(scan.final_label_set_at)}
-							</div>
-						{/if}
-					</div>
 				{/if}
 
 				<!-- Individual Model Results -->
@@ -245,6 +225,25 @@
 						{/each}
 					</div>
 				</div>
+			</div>
+		{/if}
+
+		{#if $user?.role === "patient" && scan.final_label}
+			<div class="bg-gradient-to-r from-accent/10 to-accent/5 rounded-lg border-2 border-accent/30 p-4 mb-4">
+				<div class="flex gap-2">
+					<span class="text-xl font-normal text-accent">
+						Doctor's Final Diagnosis: 
+					</span>
+					
+					<span class="text-xl font-bold capitalize {scan.final_label === 'pneumonia' ? 'text-destructive' : 'text-primary'}">
+						{scan.final_label}
+					</span>
+				</div>
+				{#if scan.final_label_set_at}
+					<div class="text-sm text-muted-foreground">
+						Confirmed on {formatDate(scan.final_label_set_at)}
+					</div>
+				{/if}
 			</div>
 		{/if}
 	
