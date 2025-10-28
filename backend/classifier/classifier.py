@@ -8,6 +8,7 @@ import numpy as np
 import tensorflow as tf
 from math import ceil
 from pathlib import Path
+from datetime import datetime
 from typing import Dict, Optional, Tuple, Any, List
 from PIL import ImageFile
 
@@ -27,8 +28,10 @@ from tensorflow.keras.layers import (
     BatchNormalization, GlobalAveragePooling2D,
     Input, ReLU, LeakyReLU, Add
 )
-
-from .progress_state import update_progress
+try:
+    from .progress_state import update_progress 
+except ImportError:
+    from progress_state import update_progress
 
 #region Env Setup
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -44,6 +47,21 @@ logging.basicConfig(
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Setup GLOBAL Variables
+BASE_DIR = Path(__file__).resolve().parent
+
+DATA_DIR = BASE_DIR / "datasets" / "data"
+    # data/ - first final version
+    # dataset_processed/ - augmented 50/50 balanced mixed
+    # data_test/ - resplitted original
+
+OUTPUT_DIR = BASE_DIR / "outputs"
+CHECKPOINT_DIR  = OUTPUT_DIR / "checkpoints"
+GRADCAM_DIR     = OUTPUT_DIR / "gradcam"
+RESULTS_DIR     = OUTPUT_DIR / "results"
+
+IMAGE_SIZE = (150, 150)
 #endregion
 
 class Classifier:
@@ -57,8 +75,8 @@ class Classifier:
     
     def __init__(self, 
                  model_name: str = 'OwnV3',
-                 img_size: Tuple[int, int] = (150, 150),
-                 data_dir: str = './data') -> None:
+                 img_size: Tuple[int, int] = IMAGE_SIZE,
+                 data_dir: Path = DATA_DIR) -> None:
         """
         Initialize the Classifier with specified configuration.
 
@@ -111,7 +129,7 @@ class Classifier:
         
         if train_dir.exists() and test_dir.exists():
             val_dir = val_dir if val_dir.exists() else None
-            logger.info(f"[DATA] Detected folders:")
+            logger.info("[DATA] Detected folders:")
             logger.info(f"  Train: {train_dir}")
             logger.info(f"  Test: {test_dir}")
             logger.info(f"  Val: {val_dir or 'None (will split from train)'}")
@@ -537,7 +555,7 @@ class Classifier:
     #region CNN training/predict
 
     def train(self, epochs=50, batch_size=32, learning_rate=0.001, optimizer='adam',
-              early_stopping=True, save_best=True, checkpoint_dir='./checkpoints', verbose=1) -> Dict[str, Any]:
+              early_stopping=True, save_best=True, checkpoint_dir=CHECKPOINT_DIR, verbose=1) -> Dict[str, Any]:
         """
         Train the model.
 
@@ -598,8 +616,10 @@ class Classifier:
                                             restore_best_weights=True, verbose=verbose, mode='max'))
             if save_best:
                 os.makedirs(checkpoint_dir, exist_ok=True)
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                filename = f"{self.model_name}_{timestamp}.epoch{{epoch:02d}}-val_acc{{val_accuracy:.4f}}.hdf5" # filename = 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'
                 callbacks.append(ModelCheckpoint(
-                    filepath=os.path.join(checkpoint_dir, 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'),
+                    filepath=os.path.join(checkpoint_dir, filename),
                     monitor='val_accuracy', save_best_only=True, save_weights_only=False, verbose=verbose, mode='max'))
             return callbacks
         
@@ -718,7 +738,7 @@ class Classifier:
         logger.info(f"[TRAIN] Test Results: Loss={results.get('loss'):.4f}, Accuracy={results.get('accuracy'):.4f}")
         return results
     
-    def save_history(self, file_path: str = "./results/training_history.json") -> bool:
+    def save_history(self, file_path: Path = RESULTS_DIR / "training_history.json") -> bool:
         """
         Saves the training history to a JSON file.
 
@@ -744,7 +764,7 @@ class Classifier:
             logger.error(f"[HISTORY] Error saving training history: {e}")
             return False
 
-    def load_history(self, file_path: str = "./results/training_history.json") -> bool:
+    def load_history(self, file_path: Path = RESULTS_DIR / "training_history.json") -> bool:
         """
         Loads training history from a JSON file.
         
@@ -765,7 +785,7 @@ class Classifier:
             with open(file_path, 'r') as f:
                 data = json.load(f)
             self.history = History(data["history"])
-            logger.info(f"[HISTORY] History loaded succesfully")
+            logger.info("[HISTORY] History loaded succesfully")
             return True
         except Exception as e:
             logger.error(f"[HISTORY] Error loading training history: {e}")
@@ -864,7 +884,7 @@ class Classifier:
                 "true_indices": labels,
             })
         
-        logger.info(f"[PREDICT] Model evaluation on validation set complete.")
+        logger.info("[PREDICT] Model evaluation on validation set complete.")
         return summary
     
     #endregion
@@ -876,7 +896,7 @@ class Classifier:
                                  image_path: str, 
                                  conv_layer_name: Optional[str] = None, 
                                  alpha: float = 0.5,
-                                 output_dir: str = './gradcam_results') -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+                                 output_dir: Path = GRADCAM_DIR) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
         """
         Generate Grad-CAM heatmap for model interpretability on a single image.
         
@@ -987,18 +1007,21 @@ class Classifier:
             superimposed_img = cv2.addWeighted(original_img, 1.0 - alpha, heatmap_colored, alpha, 0)
             
             # Save the results
-            image_name = os.path.splitext(os.path.basename(image_path))[0]
-            image_output_dir = os.path.join(output_dir, image_name)
-            os.makedirs(image_output_dir, exist_ok=True)
             
-            # Save individual components
-            cv2.imwrite(os.path.join(image_output_dir, f"{image_name}_original.png"), original_img)
-            cv2.imwrite(os.path.join(image_output_dir, f"{image_name}_heatmap.png"), heatmap_colored)
-            cv2.imwrite(os.path.join(image_output_dir, f"{image_name}_gradcam.png"), superimposed_img)
+            # base model-specific directory
+            timestamp = datetime.now().strftime("%Y%m%d")
+            image_name = os.path.splitext(os.path.basename(image_path))[0]
+            image_output_dir = output_dir / f"{image_name}_{self.model_name}_{timestamp}"
+            image_output_dir.mkdir(parents=True, exist_ok=True)
+            
+            # save components
+            cv2.imwrite(str(image_output_dir / "original.png"), original_img)
+            cv2.imwrite(str(image_output_dir / f"{conv_layer_name}_heatmap.png"), heatmap_colored)
+            cv2.imwrite(str(image_output_dir / f"{conv_layer_name}_gradcam.png"), superimposed_img)
             
             logger.info(f"  Grad-CAM results saved to: {image_output_dir}")
                         
-            return superimposed_img, heatmap_colored, original_img
+            return original_img, heatmap_colored, superimposed_img
         
         except Exception as e:
             logger.error(f"[GRADCAM] Error generating Grad-CAM heatmap: {e}")
@@ -1007,7 +1030,7 @@ class Classifier:
     def generate_gradcam_heatmap_multiple_layers(self, 
                                                  image_path: str, 
                                                  alpha: float = 0.5, 
-                                                 output_dir: str = './gradcam_results/multiple_layers') -> None:
+                                                 output_dir: Path = GRADCAM_DIR) -> None:
         """
         Generates and saves a grid of Grad-CAM heatmaps from multiple convolutional layers.
         
@@ -1040,21 +1063,21 @@ class Classifier:
         logger.info(f"  Found {len(conv_layers)} convolutional layers. Analyzing...")    
         
         # Create output directory
+        timestamp = datetime.now().strftime("%Y%m%d")
         image_name = os.path.splitext(os.path.basename(image_path))[0]
-        comparison_dir = os.path.join(output_dir, f"layer_comparison_{image_name}")
-        os.makedirs(comparison_dir, exist_ok=True)
-        
+        image_output_dir = output_dir / f"{image_name}_{self.model_name}_{timestamp}"
+        image_output_dir.mkdir(parents=True, exist_ok=True)
+
         # Generate heatmaps for each layer
         results = {}
         valid_layers = []
         
         for layer_name in conv_layers:
             try:
-                superimposed_img, heatmap, original_img = self.generate_gradcam_heatmap(
+                original_img, heatmap, superimposed_img = self.generate_gradcam_heatmap(
                     image_path, 
                     conv_layer_name=layer_name, 
                     alpha=alpha,
-                    output_dir=comparison_dir
                 )
                 
                 results[layer_name] = {
@@ -1063,12 +1086,6 @@ class Classifier:
                     'original': original_img
                 }
                 valid_layers.append(layer_name)
-                
-                # Save individual layer result
-                cv2.imwrite(
-                    os.path.join(comparison_dir, f"{image_name}_{layer_name}_gradcam.png"), 
-                    superimposed_img
-                )
                 
             except Exception as e:
                 logger.warning(f"[GRADCAM] Error generating Grad-CAM for layer {layer_name}: {e}")
@@ -1111,7 +1128,7 @@ class Classifier:
                 axes[i].axis('off')
             
             plt.tight_layout()
-            comparison_path = os.path.join(comparison_dir, f"layers_comparison_{image_name}.png")
+            comparison_path = image_output_dir / f"comparison_{image_name}.png"
             plt.savefig(comparison_path, dpi=300, bbox_inches='tight')
             plt.close()
             
@@ -1123,7 +1140,7 @@ class Classifier:
         logger.info(f"[GRADCAM] Multi-layer analysis completed. Results saved in: {output_dir}")
     
     
-    def _save_plot(self, plt, file_name: str, save_path: str = "./results"):
+    def _save_plot(self, plt, file_name: str, save_path: Path = RESULTS_DIR):
         """
         Helper function to save a matplotlib plot to a file.
         
@@ -1136,14 +1153,14 @@ class Classifier:
         :returns: The absolute path to the saved plot file.
         :rtype: str
         """
-        path = os.path.join(save_path, file_name)
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        save_path.mkdir(parents=True, exist_ok=True)
+        path = save_path / file_name
         plt.savefig(path, dpi=300, bbox_inches="tight")
         plt.close()
         logger.info(f"[PLOT] Plot saved to {path}")
         return path
     
-    def plot_confusion_matrix(self, normalize: bool = False, save_path: str = "./results"):
+    def plot_confusion_matrix(self, normalize: bool = False, save_path: Path = RESULTS_DIR):
         """
         Plots and saves the confusion matrix for the test set predictions.
 
@@ -1192,10 +1209,12 @@ class Classifier:
         plt.xlabel("Predicted Label", fontsize=12)
         plt.ylabel("True Label", fontsize=12)
         plt.tight_layout()
+        
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        model_results_dir = save_path / 'confusion_matrix' / f'{self.model_name}_{timestamp}'
+        self._save_plot(plt, "confusion_matrix.png", model_results_dir)
 
-        self._save_plot(plt, "confusion_matrix.png", save_path)
-
-    def plot_data_distribution(self, save_path: str = "./results"):
+    def plot_data_distribution(self, save_path: Path = RESULTS_DIR):
         """
         Plots and saves the distribution of data across train, validation, and test sets.
 
@@ -1239,7 +1258,7 @@ class Classifier:
         
         self._save_plot(plt, "data_distribution_bar.png", save_path)
 
-    def plot_images_example(self, save_path: str = "./results"):
+    def plot_images_example(self, save_path: Path = RESULTS_DIR):
         """
         Saves a grid of example images from the training set with their labels.
 
@@ -1267,7 +1286,7 @@ class Classifier:
         
         self._save_plot(plt, "example_images.png", save_path)
     
-    def plot_model_architecture(self, save_path: str = "./results"):
+    def plot_model_architecture(self, save_path: Path = RESULTS_DIR):
         """
         Saves a visualization of the model architecture to a file using Keras utils.
 
@@ -1279,7 +1298,7 @@ class Classifier:
             return
         
         # Plotting
-        path = os.path.join(save_path, f"architecture_{self.model_name}_.png")
+        path = os.path.join(save_path, f"Architecture_{self.model_name}_.png")
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tf.keras.utils.plot_model(
             self.model,
@@ -1318,7 +1337,7 @@ class Classifier:
         if train_metric is not None or val_metric is not None:
             ax.legend()
     
-    def plot_training_history(self, save_path: str = "./results"):
+    def plot_training_history(self, save_path: Path = RESULTS_DIR):
         """
         Plots and saves the model's training and validation history for key metrics (loss, accuracy, etc.).
 
@@ -1352,23 +1371,23 @@ class Classifier:
                 axes[i].axis('off')
 
         plt.tight_layout()
-        self._save_plot(plt, "training_history.png", save_path)
+        
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        model_results_dir = save_path / 'training_history' / f'{self.model_name}_{timestamp}'
+        self._save_plot(plt, "training_history.png", model_results_dir)
 
     #endregion
 
 
 def ensemble_testing():
-    data_dir = './data'
-    # ./data/ - first final version
-    # ./dataset_processed/ - augmented 50/50 balanced mixed
-    # ./data_test/ - resplitted original
+    data_dir = DATA_DIR
     
     checkpoint_paths = {
-        "OwnV3": "../../checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5",
-        "OwnV2": "../../checkpoints/Saved/OwnV2.epoch28-val_acc0.9705.hdf5",
-        "OwnV1": "../../checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
-        "VGG16": "../../checkpoints/Saved/VGG16.epoch18-val_acc0.9534.hdf5",
-        "AlexNet": "../../checkpoints/Saved/AlexNet.epoch27-val_acc0.9761.hdf5"
+        "OwnV3":   f"{CHECKPOINT_DIR}/Saved/OwnV3.epoch50-val_acc0.9830.hdf5",
+        "OwnV2":   f"{CHECKPOINT_DIR}/Saved/OwnV2.epoch28-val_acc0.9705.hdf5",
+        "OwnV1":   f"{CHECKPOINT_DIR}/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
+        "VGG16":   f"{CHECKPOINT_DIR}/Saved/VGG16.epoch18-val_acc0.9534.hdf5",
+        "AlexNet": f"{CHECKPOINT_DIR}/Saved/AlexNet.epoch27-val_acc0.9761.hdf5"
     }
     
     weights = []
@@ -1427,10 +1446,7 @@ def ensemble_testing():
         logger.info(f"  {r['model']}: {r['accuracy']:.4f}")
 
 def model_testing():
-    data_dir = './data'
-    # ./data/ - first final version
-    # ./dataset_processed/ - augmented 50/50 balanced mixed
-    # ./data_test/ - resplitted original
+    data_dir = DATA_DIR
     
     classifier = Classifier(
         model_name='OwnV3',
@@ -1441,7 +1457,7 @@ def model_testing():
     
     # Train the model
     # results = classifier.train(
-    #     epochs=20,
+    #     epochs=2,
     #     batch_size=16, 
     #     learning_rate=0.0003,
     # )
@@ -1449,7 +1465,7 @@ def model_testing():
     # logger.info(results)
     
     if classifier.model is None:
-        classifier.load_model('../../checkpoints/Saved/OwnV3.epoch50-val_acc0.9830.hdf5')
+        classifier.load_model(f"{CHECKPOINT_DIR}/Saved/OwnV3.epoch50-val_acc0.9830.hdf5")
     if classifier.history is None:
         classifier.load_history()
     
@@ -1463,11 +1479,11 @@ def model_testing():
     
     
     # Evaluate model
-    # results = classifier.evaluate_model()
-    # logger.info("Evaluation results:")
-    # for k, v in results.items():
-    #     if isinstance(v, (float, int)) and v is not None:
-    #         logger.info(f"  {k}: {v:.4f}")
+    results = classifier.evaluate_model()
+    logger.info("Evaluation results:")
+    for k, v in results.items():
+        if isinstance(v, (float, int)) and v is not None:
+            logger.info(f"  {k}: {v:.4f}")
     
     
     # Image prediction / heatmap testing
@@ -1475,11 +1491,11 @@ def model_testing():
     # OwnV3only - backend/api/classifier/data/train/PNEUMONIA/PNEUMONIA_person1921_bacteria_4828_aug1_rot-6.4_hflip_bright0.83_cont1.18_blur.jpeg
     # GoodMap   - backend/api/classifier/data/train/PNEUMONIA/PNEUMONIA_person418_virus_852_aug1_rot11.9_hflip_bright0.98_color0.91.jpeg
     
-    # image_to_test = './data/train/PNEUMONIA/PNEUMONIA_person1929_bacteria_4839_aug1_rot14.8_bright0.88_cont1.08_blur_color0.94.jpeg'
-    # predicted_class, confidence, _ = classifier.predict(image_to_test)
+    image_to_test = f'{DATA_DIR}/train/PNEUMONIA/PNEUMONIA_person1929_bacteria_4839_aug1_rot14.8_bright0.88_cont1.08_blur_color0.94.jpeg'
+    predicted_class, confidence, _ = classifier.predict(image_to_test)
     
-    # classifier.generate_gradcam_heatmap(image_to_test)
-    # classifier.test_multiple_layers(image_to_test)
+    classifier.generate_gradcam_heatmap(image_to_test)
+    classifier.generate_gradcam_heatmap_multiple_layers(image_to_test)
 
 
 if __name__ == "__main__":
