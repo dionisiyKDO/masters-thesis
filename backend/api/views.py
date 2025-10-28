@@ -24,9 +24,8 @@ from .serializers import (
     ModelVersionSerializer, AuditLogSerializer,
     )
 from .permissions import IsDoctor, IsPatientOfCase, IsDoctorOfCase, IsAdmin
-from .classifier.classifier import Classifier
-from .classifier.config import config_v1 as config
-from .classifier.progress_state import update_progress, get_progress, reset_progress
+from classifier.classifier import Classifier
+from classifier.progress_state import update_progress, get_progress, reset_progress
 
 #region Configure logging
 logging.basicConfig(
@@ -137,14 +136,11 @@ class ScanUploadView(APIView):
             try:
                 classifier = Classifier(
                     model_version.model_name,
-                    img_size=config['img_size'],
-                    data_dir='./api/classifier/data'
                 )
                 classifier.load_model(model_version.storage_uri)
                 predicted_class, confidence, probabilities = classifier.predict(scan.image_path.path)
-                superimposed, heatmap, original = classifier.generate_gradcam_heatmap(
+                original, heatmap, superimposed = classifier.generate_gradcam_heatmap(
                     image_path=scan.image_path.path,
-                    output_dir="./gradcam_results"
                 )
                 
                 # Save individual prediction
@@ -163,8 +159,8 @@ class ScanUploadView(APIView):
                 logger.info(f"Raw probs from {model_version.model_name}: {probabilities}")
                 
                 probabilities = np.array([
-                    probabilities.get("PNEUMONIA", 0.0),
-                    probabilities.get("NORMAL", 0.0),
+                    probabilities.get(1, 0.0),
+                    probabilities.get(0, 0.0),
                 ])
                 
                 analyses.append({
@@ -436,8 +432,6 @@ class TrainModelView(APIView):
             
             classifier = Classifier(
                 model_name=model_name,
-                img_size=config['img_size'],
-                data_dir='./api/classifier/data'
             )
             results = classifier.train(
                 epochs=epochs,
