@@ -93,7 +93,7 @@
 <div bind:this={dropdownContainer} class="relative w-64">
 	<input
 		type="text"
-		class="border-border bg-background text-foreground w-full rounded-md border px-3 py-2 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+		class="border-border bg-background text-foreground w-full rounded-md border px-3 py-1 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 		placeholder="Search for a patient..."
 		value={searchQuery}
 		oninput={handleInputChange}
@@ -101,7 +101,7 @@
 	/>
 	
 	{#if isOpen && filteredPatients.length > 0}
-		<div class="bg-background border-border absolute z-10 mt-1 max-h-60 w-full overflow-auto rounded-md border shadow-lg">
+		<div class="bg-background border-border absolute z-10 mt-1 max-h-64 w-full overflow-auto rounded-md border shadow-lg">
 			{#each filteredPatients as patient (patient.id)}
 				<button
 					type="button"
