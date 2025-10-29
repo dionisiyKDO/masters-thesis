@@ -17,7 +17,7 @@
             
             return (
                 userStr.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                log.details.message.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                JSON.stringify(log.details).toLowerCase().includes(searchTerm.toLowerCase()) ||
                 log.action.toLowerCase().includes(searchTerm.toLowerCase())
             ) && (
                 searchDate === '' || new Date(log.created_at).toDateString() === new Date(searchDate).toDateString()
@@ -86,24 +86,24 @@
             <table class="w-full table-fixed text-sm text-left text-foreground">
                 <thead class="bg-muted/50 text-xs text-muted-foreground uppercase">
                     <tr>
-                        <th scope="col" class="w-3/12 px-6 py-3">Timestamp</th>
-                        <th scope="col" class="w-3/12 px-6 py-3">User</th>
-                        <th scope="col" class="w-2/12 px-6 py-3">Action</th>
-                        <th scope="col" class="w-4/12 px-6 py-3">Details</th>
+                        <th scope="col" class="w-[240px] px-4 py-3">Event</th>
+                        <th scope="col" class="px-4 py-3">Details</th>
                     </tr>
                 </thead>
                 <tbody>
                     {#each filteredLogs as log (log.id)}
                         <tr class="border-b border-border hover:bg-muted/30">
-                            <td class="px-6 py-4 text-muted-foreground whitespace-nowrap">{formatDate(log.created_at)}</td>
-                            <td class="px-6 py-4 font-medium">{log.user.email}</td>
-                            <td class="px-6 py-4">
-                                <span class="px-2 py-0.5 rounded-full text-xs font-medium {log.action.includes('ERROR') ? 'bg-red-100 text-red-700' : 'bg-gray-100 text-gray-700'}">
-                                    {log.action}
-                                </span>
+                            <td class="px-4 py-4">
+                                <div class="border-l-2 {log.action.includes('ERROR') ? 'border-destructive' : 'border-primary'} pl-3 space-y-1.5">
+                                    <div class="text-xs font-semibold {log.action.includes('ERROR') ? 'text-destructive' : 'text-primary'}">
+                                        {log.action}
+                                    </div>
+                                    <div class="text-sm font-medium text-foreground break-all">{log.user.email}</div>
+                                    <div class="text-xs text-muted-foreground/70">{formatDate(log.created_at)}</div>
+                                </div>
                             </td>
-                            <td class="px-6 py-4 text-muted-foreground">
-                                <p class="bg-background/50 p-2 rounded text-xs">{log.details.message}</p>
+                            <td class="px-4 py-4 text-muted-foreground">
+                                <pre class="bg-background/50 p-2 rounded text-xs whitespace-pre-wrap break-all">{JSON.stringify(log.details, null, 2)}</pre>
                             </td>
                         </tr>
                     {/each}
