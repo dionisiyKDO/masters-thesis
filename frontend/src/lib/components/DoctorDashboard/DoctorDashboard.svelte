@@ -7,7 +7,14 @@
 	import type { MedicalCase, Patient } from '$lib/types';
 
 	// Tab management
-	let activeTab: 'assigned' | 'patients' | 'analytics' = $state('assigned');
+    type Tab = 'assigned' | 'patients';
+	let activeTab: Tab = $state('assigned');
+	
+    interface Page {  key: Tab; label: string; }
+    const pages: Page[] = [
+        {key: 'assigned', label: "Assigned Cases" },
+        {key: 'patients', label: "By patient" },
+    ]
 
 	let assignedCases: MedicalCase[] = $state([]);
 
@@ -16,14 +23,20 @@
 	let patientCases: MedicalCase[] = $state([]);
 
 	$inspect(assignedCases);
-
 	$inspect(patientCases);
 	$inspect(patients);
 	$inspect(selectedPatient);
 	
-
 	// Modal management
 	let modalContainer: HTMLDivElement;
+
+	// Group cases by status
+	function groupCasesByStatus(cases: MedicalCase[]) {
+		const open = cases.filter(c => c.status === 'open');
+		const closed = cases.filter(c => c.status === 'closed');
+		const archived = cases.filter(c => c.status === 'archived');
+		return { open, closed, archived };
+	}
 
 	async function fetchCases(): Promise<MedicalCase[] | null> {
 		try {
@@ -70,7 +83,7 @@
 		modalContainer.classList.add('hidden');
 		casesReq = fetchCases();
 	}
-	function switchTab(tab: 'assigned' | 'patients' | 'analytics') {
+	function switchTab(tab: Tab) {
 		activeTab = tab;
 	}
 	function handlePatientSelect(patient: Patient | null) {
@@ -79,7 +92,6 @@
 		}
 		selectedPatient = patients.find(p => p.id === patient.id) || null;
 		console.log('selectedPatient', selectedPatient);
-		
 		
 		if (selectedPatient) {
 			patientCasesReq = fetchPatientCases(selectedPatient?.user.id);
@@ -95,59 +107,19 @@
 </script>
 
 <!-- Tab Navigation -->
-<div class="border-border mb-6 border-b">
-	<nav class="flex space-x-8">
-		<button
-			class="border-b-2 px-1 py-4 text-sm font-medium {activeTab === 'patients'
-				? 'border-primary text-primary'
-				: 'text-muted-foreground hover:text-foreground border-transparent'}"
-			onclick={() => switchTab('patients')}
+<div class="flex items-center gap-2 border-border mb-6 border-b">
+	{#each pages as {key, label}}
+		<button 
+			class="px-4 py-2 text-sm font-medium transition-colors 
+				{activeTab === key 
+					? 'text-primary border-b-2 border-primary' 
+					: 'text-muted-foreground hover:text-foreground'}"
+			onclick={() => switchTab(key)} 
 		>
-			By patient
+			{label}
 		</button>
-		<button
-			class="border-b-2 px-1 py-4 text-sm font-medium {activeTab === 'assigned'
-				? 'border-primary text-primary'
-				: 'text-muted-foreground hover:text-foreground border-transparent'}"
-			onclick={() => switchTab('assigned')}
-		>
-			Assigned Cases
-		</button>
-	</nav>
+	{/each}
 </div>
-
-<!-- Patient History Tab -->
-{#if activeTab === 'patients'}
-	<div class="space-y-4">
-		
-		<div class="flex items-center gap-4">
-			<h1 class="text-foreground text-2xl font-bold">Patient Case History</h1>
-			<PatientSearch {patients} onselect={handlePatientSelect} />
-		</div>
-
-		{#if selectedPatient}
-			{#await patientCasesReq}
-				<div class="flex items-center justify-center py-8">
-					<div class="border-primary h-8 w-8 animate-spin rounded-full border-b-2"></div>
-				</div>
-			{:then patientCases}
-				{#if patientCases}
-					{#if patientCases.length === 0}
-						<p class="text-muted-foreground">No cases found for this patient.</p>
-					{:else}
-						<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-							{#each patientCases as medicalCase (medicalCase.id)}
-								<CaseCard {medicalCase} />
-							{/each}
-						</div>
-					{/if}
-				{/if}
-			{/await}
-		{:else}
-			<p class="text-muted-foreground">Please select a patient to view their case history.</p>
-		{/if}
-	</div>
-{/if}
 
 <!-- Assigned Cases Tab -->
 {#if activeTab === 'assigned'}
@@ -166,10 +138,49 @@
 				{#if cases.length === 0}
 					<p class="text-muted-foreground">You have no cases assigned to you.</p>
 				{:else}
-					<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-						{#each cases as medicalCase (medicalCase.id)}
-							<CaseCard {medicalCase} />
-						{/each}
+					{@const grouped = groupCasesByStatus(cases)}
+					<div class="space-y-8">
+						{#if grouped.open.length > 0}
+							<div class="space-y-4">
+								<div class="flex items-center gap-1 border-l-2 pl-2 border-primary">
+									<h2 class="text-lg font-semibold text-foreground">Open Cases</h2>
+									<span class="text-lg text-muted-foreground">({grouped.open.length})</span>
+								</div>
+								<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+									{#each grouped.open as medicalCase (medicalCase.id)}
+										<CaseCard {medicalCase} />
+									{/each}
+								</div>
+							</div>
+						{/if}
+
+						{#if grouped.closed.length > 0}
+							<div class="space-y-4">
+								<div class="flex items-center gap-1 border-l-2 pl-2 border-destructive">
+									<h2 class="text-lg font-semibold text-foreground">Closed Cases</h2>
+									<span class="text-lg text-muted-foreground">({grouped.closed.length})</span>
+								</div>
+								<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+									{#each grouped.closed as medicalCase (medicalCase.id)}
+										<CaseCard {medicalCase} />
+									{/each}
+								</div>
+							</div>
+						{/if}
+
+						{#if grouped.archived.length > 0}
+							<div class="space-y-4">
+								<div class="flex items-center gap-1 border-l-2 pl-2 border-muted">
+									<h2 class="text-lg font-semibold text-foreground">Archived Cases</h2>
+									<span class="text-lg text-muted-foreground">({grouped.archived.length})</span>
+								</div>
+								<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+									{#each grouped.archived as medicalCase (medicalCase.id)}
+										<CaseCard {medicalCase} />
+									{/each}
+								</div>
+							</div>
+						{/if}
 					</div>
 				{/if}
 			</div>
@@ -179,4 +190,78 @@
 			<FormMedicalCase {closeModal} />
 		</div>
 	{/await}
+{/if}
+
+<!-- Patient History Tab -->
+{#if activeTab === 'patients'}
+	<div class="space-y-6">
+		<div class="flex items-center justify-between gap-4">
+			<div class="flex gap-6">
+				<h1 class="text-foreground text-3xl font-bold">Patient Case History</h1>
+				<PatientSearch {patients} onselect={handlePatientSelect} />
+			</div>
+			<button class="button" onclick={openModal}> Create New Case </button>
+		</div>
+
+		{#if selectedPatient}
+			{#await patientCasesReq}
+				<div class="flex items-center justify-center py-8">
+					<div class="border-primary h-8 w-8 animate-spin rounded-full border-b-2"></div>
+				</div>
+			{:then cases}
+				{#if cases}
+					{#if cases.length === 0}
+						<p class="text-muted-foreground">No cases found for this patient.</p>
+					{:else}
+						{@const grouped = groupCasesByStatus(cases)}
+						<div class="space-y-8">
+							{#if grouped.open.length > 0}
+								<div class="space-y-4">
+									<div class="flex items-center gap-1 border-l-2 pl-2 border-primary">
+										<h2 class="text-lg font-semibold text-foreground">Open Cases</h2>
+										<span class="text-lg text-muted-foreground">({grouped.open.length})</span>
+									</div>
+									<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+										{#each grouped.open as medicalCase (medicalCase.id)}
+											<CaseCard {medicalCase} />
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							{#if grouped.closed.length > 0}
+								<div class="space-y-4">
+									<div class="flex items-center gap-1 border-l-2 pl-2 border-destructive">
+										<h2 class="text-lg font-semibold text-foreground">Closed Cases</h2>
+										<span class="text-lg text-muted-foreground">({grouped.closed.length})</span>
+									</div>
+									<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+										{#each grouped.closed as medicalCase (medicalCase.id)}
+											<CaseCard {medicalCase} />
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							{#if grouped.archived.length > 0}
+								<div class="space-y-4">
+									<div class="flex items-center gap-1 border-l-2 pl-2 border-muted">
+										<h2 class="text-lg font-semibold text-foreground">Archived Cases</h2>
+										<span class="text-lg text-muted-foreground">({grouped.archived.length})</span>
+									</div>
+									<div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+										{#each grouped.archived as medicalCase (medicalCase.id)}
+											<CaseCard {medicalCase} />
+										{/each}
+									</div>
+								</div>
+							{/if}
+						</div>
+					{/if}
+				{/if}
+			{/await}
+		{:else}
+			<p class="text-muted-foreground">Please select a patient to view their case history.</p>
+		{/if}
+	</div>
 {/if}
