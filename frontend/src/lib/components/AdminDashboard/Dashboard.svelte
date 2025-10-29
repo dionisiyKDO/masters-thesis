@@ -184,7 +184,7 @@
                             {/if}
                         </div>
                         <div class="flex-1 min-w-0">
-                            <p class="text-sm text-foreground truncate">{activity.details.message}</p>
+                            <p class="text-sm text-foreground truncate">{activity.action}</p>
                             <p class="text-xs text-muted-foreground">{formatDate(activity.created_at)}</p>
                         </div>
                     </li>
