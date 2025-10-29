@@ -16,6 +16,8 @@
     let isDropdownOpen = $state(false);
     let filteredPatients = $state<Patients[]>([]);
 
+    $inspect(patients);
+
     // Update filtered patients when search query or patients change
     $effect(() => {
         if (patients && searchQuery) {
@@ -23,8 +25,8 @@
                 const fullName = `${patient.first_name} ${patient.last_name}`.toLowerCase();
                 const searchLower = searchQuery.toLowerCase();
                 return fullName.includes(searchLower) ||
-                       patient.first_name.toLowerCase().includes(searchLower) ||
-                       patient.last_name.toLowerCase().includes(searchLower);
+                       patient.user.first_name.toLowerCase().includes(searchLower) ||
+                       patient.user.last_name.toLowerCase().includes(searchLower);
             });
         } else {
             filteredPatients = patients || [];
@@ -33,7 +35,7 @@
 
     async function fetchPatients(): Promise<Patients[] | null> {
 		try {
-			const response = await api.get('/auth/patients/')
+			const response = await api.get('/list/patients/')
 			if (!response.ok) throw new Error('Failed to fetch patients.');
 			const data = await response.json();            
             patients = data
@@ -54,7 +56,7 @@
             description: formData.get('description') as string,
             status: 'open',
             primary_doctor_id: parseInt(formData.get('primary_doctor_id') as string) || null,
-            patient_id: selectedPatient?.id || null,
+            patient_id: selectedPatient?.user.id || null,
         };
         
 		try {
@@ -73,7 +75,7 @@
     //#region 
     function selectPatient(patient: Patients) {
         selectedPatient = patient;
-        searchQuery = `${patient.first_name} ${patient.last_name}`;
+        searchQuery = `${patient.user.first_name} ${patient.user.last_name}`;
         isDropdownOpen = false;
     }
 
@@ -95,7 +97,7 @@
         
         // Clear selection if search doesn't match selected patient
         if (selectedPatient) {
-            const fullName = `${selectedPatient.first_name} ${selectedPatient.last_name}`.toLowerCase();
+            const fullName = `${selectedPatient.user.first_name} ${selectedPatient.user.last_name}`.toLowerCase();
             if (!fullName.includes(searchQuery.toLowerCase())) {
                 selectedPatient = null;
             }
@@ -159,7 +161,7 @@
                                     onclick={() => selectPatient(patient)}
                                     class="w-full text-left px-3 py-2 hover:bg-muted focus:bg-muted focus:outline-none text-foreground"
                                 >
-                                    {patient.first_name} {patient.last_name}
+                                    {patient.user.first_name} {patient.user.last_name}
                                 </button>
                             {/each}
                         </div>
