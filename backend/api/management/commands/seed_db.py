@@ -13,14 +13,11 @@ from api.models import (
 )
 
 # --- Configuration ---
-# Easily scale the amount of data to generate
 DEFAULT_DOCTORS = 2
 DEFAULT_PATIENTS = 6
 MAX_CASES_PER_PATIENT = 3
 MAX_SCANS_PER_CASE = 5
 MAX_ANNOTATIONS_PER_SCAN = 2
-
-# Probabilities for realistic data
 PROB_AI_AGREES_WITH_BASE = 0.90
 PROB_FINAL_LABEL_AGREES_WITH_BASE = 0.80
 
@@ -56,7 +53,7 @@ MODELS = [
         "uri": "/home/dionisiy/masters-thesis/backend/classifier/outputs/checkpoints/Saved/OwnV1.epoch26-val_acc0.9761.hdf5",
         "desc": "Initial release of the OwnV1 model based on a custom CNN architecture.",
         "metrics": {"accuracy": 0.9761, "f1_score": 0.89, "precision": 0.90},
-        "active": False # An older, inactive model
+        "active": False
     },
     {
         "name": "OwnV2",
@@ -86,13 +83,6 @@ MODELS = [
         "metrics": {"accuracy": 0.9489, "f1_score": 0.85, "precision": 0.86},
         "active": True
     },
-    # {
-    #     "name": "ResNet50",
-    #     "uri": "/home/dionisiy/masters-thesis/backend/classifier/outputs/checkpoints/Saved/ResNet50.epoch22-val_acc0.8818.hdf5",
-    #     "desc": "ResNet50 based model with moderate performance.",
-    #     "metrics": {"accuracy": 0.8818, "f1_score": 0.75, "precision": 0.76},
-    #     "active": True
-    # },
 ]
 
 # Initialize Faker
@@ -122,7 +112,8 @@ class Command(BaseCommand):
 
         # Pass admin for system-level logging (AI runs, ensembles)
         total_cases, total_scans = self._create_cases_and_scans(patients, doctors, models, admin)
-        self._create_ensembles(models, admin) # Pass admin
+        self._create_ensembles(models, admin)
+        self._create_errors(admin)
 
         # Get the total count of logs created dynamically
         total_logs = AuditLog.objects.count()
@@ -150,14 +141,6 @@ class Command(BaseCommand):
         DoctorProfile.objects.all().delete()
         PatientProfile.objects.all().delete()
         User.objects.all().delete()
-
-    def _create_log(self, user, action, message):
-        """Helper to create an audit log entry."""
-        AuditLog.objects.create(
-            user=user,
-            action=action,
-            details={"message": message}
-        )
 
     def _create_admin(self):
         return User.objects.create_superuser(
@@ -188,8 +171,17 @@ class Command(BaseCommand):
                 specialization=random.choice(specializations),
             )
             doctors.append(user)
-            # LOGGING: Log creation by admin
-            self._create_log(admin, 'CREATED_USER', f"Admin created doctor '{user.username}'")
+            
+            # Log user registration
+            AuditLog.objects.create(
+                user=user,
+                action='USER_REGISTERED',
+                details={
+                    "created_user_id": user.id,
+                    "username": user.username,
+                    "role": user.role
+                }
+            )
         return doctors
 
     def _create_patients(self, num, admin):
@@ -213,8 +205,17 @@ class Command(BaseCommand):
                 medical_record_number=fake.unique.numerify("MRN-##########"),
             )
             patients.append(user)
-            # LOGGING: Log creation by admin
-            self._create_log(admin, 'CREATED_USER', f"Admin created patient '{user.username}'")
+            
+            # Log user registration
+            AuditLog.objects.create(
+                user=user,
+                action='USER_REGISTERED',
+                details={
+                    "created_user_id": user.id,
+                    "username": user.username,
+                    "role": user.role
+                }
+            )
         return patients
 
     def _create_models(self, admin):
@@ -230,11 +231,31 @@ class Command(BaseCommand):
                 is_active=m["active"],
             )
             models.append(model)
-            # LOGGING: Log creation by admin
-            self._create_log(admin, 'CREATED_MODEL', f"Admin created model '{model.model_name}'")
+            
+            # Log model creation with detailed metrics
+            AuditLog.objects.create(
+                user=admin,
+                action='CREATED_MODEL_VERSION',
+                details={
+                    "actor_id": admin.id,
+                    "object_id": model.id,
+                    "object_name": model.model_name,
+                    "source": "Seeding",
+                    "metrics": m["metrics"]
+                }
+            )
             if not m["active"]:
-                # LOGGING: Log deactivation if created as inactive
-                self._create_log(admin, 'DEACTIVATED_MODEL', f"Model '{model.model_name}' created as inactive")
+                AuditLog.objects.create(
+                    user=admin,
+                    action='UPDATED_MODEL_VERSION',
+                    details={
+                        "actor_id": admin.id,
+                        "object_id": model.id,
+                        "changes_sent": {
+                            "is_active": "False"
+                        }
+                    }
+                )
         return models
 
     def _create_cases_and_scans(self, patients, doctors, models, admin):
@@ -246,9 +267,11 @@ class Command(BaseCommand):
         statuses = ["open", "closed", "archived"]
         ai_labels = ["pneumonia", "normal"]
         doc_notes = [
-            "Findings are consistent with the AI analysis.", "No acute abnormalities seen.",
+            "Findings are consistent with the AI analysis.",
+            "No acute abnormalities seen.",
             "Slight opacity in the lower lobe, requires monitoring.",
-            "Signs of minor inflammation present.", "Recommend follow-up CT for confirmation.",
+            "Signs of minor inflammation present.",
+            "Recommend follow-up CT for confirmation.",
             "Patient's condition appears stable.",
             "AI heatmap correctly identifies the region of interest.",
             "Annotation disagrees with AI. Manual review needed.",
@@ -269,8 +292,23 @@ class Command(BaseCommand):
                     diagnosis_summary=random.choice(["", fake.paragraph(nb_sentences=2)]),
                     status=random.choice(statuses),
                 )
-                # LOGGING: Log case creation by the assigned doctor
-                self._create_log(doctor, 'CREATED_CASE', f"Doctor '{doctor.username}' created case {case.id} for patient '{patient.username}'")
+                
+                # Log case creation
+                AuditLog.objects.create(
+                    user=doctor,
+                    action='CREATED_MEDICAL_CASE',
+                    details={
+                        "actor_id": doctor.id,
+                        "object_id": case.id,
+                        "changes_sent": {
+                            "title": case.title,
+                            "description": case.description,
+                            "status": case.status,
+                            "patient": f"{patient.username} ({patient.role}): joined - {patient.date_joined}",
+                            "primary_doctor": f"{doctor.username} ({doctor.role}): joined - {doctor.date_joined}"
+                        }
+                    }
+                )
 
                 for i in range(random.randint(2, MAX_SCANS_PER_CASE)):
                     total_scans += 1
@@ -290,8 +328,18 @@ class Command(BaseCommand):
                         final_label=final_label,
                         final_label_set_at=fake.date_time_this_year(),
                     )
-                    # LOGGING: Log scan upload by the doctor
-                    self._create_log(doctor, 'UPLOADED_SCAN', f"Doctor '{doctor.username}' uploaded scan {scan.id} for case {case.id}")
+                    
+                    # Log scan upload
+                    AuditLog.objects.create(
+                        user=doctor,
+                        action='UPLOADED_SCAN',
+                        details={
+                            "actor_id": doctor.id,
+                            "scan_id": scan.id,
+                            "case_id": case.id,
+                            "patient_id": patient.id
+                        }
+                    )
 
                     # Each scan gets an AI analysis from ACTIVE models
                     for model in active_models:
@@ -311,18 +359,88 @@ class Command(BaseCommand):
                             heatmap_path=f"heatmaps/scan_{scan.id}_model_{model.id}.png",
                             heatmap_type="gradcam",
                         )
-                        # LOGGING: Log AI run as a system (admin) action
-                        self._create_log(admin, 'RAN_AI_ANALYSIS', f"System ran analysis on scan {scan.id} with model '{model.model_name}'")
+                        
+                        # Log AI analysis
+                        AuditLog.objects.create(
+                            user=doctor,
+                            action='RAN_AI_ANALYSIS',
+                            details={
+                                "actor_id": doctor.id,
+                                "scan_id": scan.id,
+                                "model_id": model.id,
+                                "model_name": model.model_name,
+                                "result": prediction_label.upper(),
+                                "confidence": confidence
+                            }
+                        )
 
+                    # Log final label update
+                    AuditLog.objects.create(
+                        user=doctor,
+                        action='UPDATED_CHEST_SCAN',
+                        details={
+                            "actor_id": doctor.id,
+                            "object_id": scan.id,
+                            "changes_sent": {
+                                "final_label": final_label,
+                                "final_label_set_at": str(scan.final_label_set_at)
+                            }
+                        }
+                    )
+                    
                     # Each scan is annotated by the primary doctor
                     for i in range(random.randint(2, MAX_ANNOTATIONS_PER_SCAN)):
-                        DoctorAnnotation.objects.create(
+                        annotation = DoctorAnnotation.objects.create(
                             scan=scan,
                             doctor=doctor,
                             notes=f"{random.choice(doc_notes)}",
                         )
-                        # LOGGING: Log annotation by the doctor
-                        self._create_log(doctor, 'ADDED_ANNOTATION', f"Doctor '{doctor.username}' added annotation to scan {scan.id}")
+                        
+                        # Log annotation creation
+                        AuditLog.objects.create(
+                            user=doctor,
+                            action='CREATED_DOCTOR_ANNOTATION',
+                            details={
+                                "actor_id": doctor.id,
+                                "object_id": annotation.id,
+                                "changes_sent": {
+                                    "notes": annotation.notes,
+                                    "doctor": f"{doctor.username} ({doctor.role}): joined - {doctor.date_joined}",
+                                    "scan": f"Scan {scan.id} - '{scan.image_path}'"
+                                }
+                            }
+                        )
+
+                # Sometimes update case status/diagnosis
+                if random.random() < 0.4:
+                    old_status = case.status
+                    case.status = random.choice([s for s in statuses if s != old_status])
+                    case.save()
+                    
+                    AuditLog.objects.create(
+                        user=doctor,
+                        action='UPDATED_MEDICAL_CASE',
+                        details={
+                            "actor_id": doctor.id,
+                            "object_id": case.id,
+                            "changes_sent": {
+                                "status": case.status
+                            }
+                        }
+                    )
+                
+                if case.diagnosis_summary and random.random() < 0.3:
+                    AuditLog.objects.create(
+                        user=doctor,
+                        action='UPDATED_MEDICAL_CASE',
+                        details={
+                            "actor_id": doctor.id,
+                            "object_id": case.id,
+                            "changes_sent": {
+                                "diagnosis_summary": case.diagnosis_summary
+                            }
+                        }
+                    )
 
         return total_cases, total_scans
 
@@ -370,5 +488,35 @@ class Command(BaseCommand):
             # Set M2M relationship
             ensemble.source_analyses.set(analyses)
             
-            # LOGGING: Log ensemble creation as a system (admin) action
-            self._create_log(admin, 'CREATED_ENSEMBLE', f"System created ensemble for scan {scan.id} using '{method}'")
+            # Log ensemble creation
+            # Use the scan's case doctor as the actor
+            doctor = scan.case.primary_doctor
+            AuditLog.objects.create(
+                user=doctor,
+                action='CREATED_ENSEMBLE',
+                details={
+                    "actor_id": doctor.id,
+                    "scan_id": scan.id,
+                    "ensemble_id": ensemble.id,
+                    "method": method,
+                    "result": combined_prediction_label
+                }
+            )
+
+    def _create_errors(self, admin):
+        """Create some error logs for testing purposes."""
+        # Create a few error logs to simulate real issues
+        error_logs = [
+            ("UPLOAD_ERROR", {"message": "Failed to upload scan", "reason": "file corrupted or invalid format"}),
+            ("MODEL_INFERENCE_ERROR", {"model_id": 46, "message": "Memory allocation failed during inference"}),
+            ("DATABASE_ERROR", {"message": "Transaction rollback during case creation", "reason": "concurrent access"}),
+            ("HEATMAP_GENERATION_ERROR", {"scan_id": 42, "message": "Timeout during heatmap generation"}),
+            ("ENSEMBLE_ERROR", {"message": "Insufficient predictions", "available_models": 1, "required": 2}),
+        ]
+
+        for action, details in error_logs:
+            AuditLog.objects.create(
+                user=admin,
+                action=action,
+                details=details
+            )
