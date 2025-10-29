@@ -630,13 +630,6 @@ class Classifier:
                     classifier_instance=self, # Pass 'self' (the classifier instance)
                     filepath=static_filepath,
                     monitor='val_accuracy', save_best_only=True, save_weights_only=False, verbose=verbose, mode='max'))
-        
-                os.makedirs(checkpoint_dir, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-                filename = f"{self.model_name}_{timestamp}.epoch{{epoch:02d}}-val_acc{{val_accuracy:.4f}}.hdf5" # filename = 'model.epoch{epoch:02d}-val_acc{val_accuracy:.4f}.hdf5'
-                callbacks.append(ModelCheckpoint(
-                    filepath=os.path.join(checkpoint_dir, filename),
-                    monitor='val_accuracy', save_best_only=True, save_weights_only=False, verbose=verbose, mode='max'))
             return callbacks
         
         def compile_model():
