@@ -4,6 +4,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import (AllowAny, IsAuthenticated, IsAdminUser, IsAuthenticatedOrReadOnly)
 from rest_framework_simplejwt.views import TokenObtainPairView
 
+from api.audit_utils import create_audit_log
+from api.audit_mixins import AuditLoggingMixin
 from .models import User, PatientProfile, DoctorProfile
 from .permissions import IsDoctor, IsAdmin
 from .serializers import (
@@ -15,7 +17,7 @@ from .serializers import (
 )
 
 
-class UserViewSet(viewsets.ModelViewSet):
+class UserViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     """
     API endpoint that allows users to be viewed or edited.
     """
@@ -24,6 +26,7 @@ class UserViewSet(viewsets.ModelViewSet):
     serializer_class = UserSerializer
     permission_classes = [IsAdmin]
     
+    audit_log_model_name = "USER"
     
     @action(detail=False, methods=["get"], permission_classes=[IsAdmin])
     def stats(self, request):
@@ -38,16 +41,18 @@ class UserViewSet(viewsets.ModelViewSet):
         })
 
 
-class DoctorProfileViewSet(viewsets.ModelViewSet):
+class DoctorProfileViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     queryset = DoctorProfile.objects.all()
     serializer_class = DoctorProfileSerializer
     permission_classes = [IsDoctor | IsAdmin]
+    audit_log_model_name = "DOCTOR_PROFILE"
 
 
-class PatientProfileViewSet(viewsets.ModelViewSet):
+class PatientProfileViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     queryset = PatientProfile.objects.all()
     serializer_class = PatientProfileSerializer
     permission_classes = [IsDoctor | IsAdmin]
+    audit_log_model_name = "PATIENT_PROFILE"
 
 
 class RegisterView(generics.CreateAPIView):
@@ -59,6 +64,21 @@ class RegisterView(generics.CreateAPIView):
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
 
+    def perform_create(self, serializer):
+        """
+        Hook for logging registration.
+        """
+        new_user = serializer.save()
+        
+        action = "USER_REGISTERED"
+        log_details = {
+            "created_user_id": new_user.id,
+            "username": new_user.username,
+            "role": new_user.role
+        }
+        
+        # Log this action as being performed by the new user
+        create_audit_log(user=new_user, action=action, details=log_details)
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer

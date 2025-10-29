@@ -25,9 +25,14 @@ from .serializers import (
     DoctorAnnotationSerializer, ChestScanSerializer,
     ModelVersionSerializer, AuditLogSerializer,
     )
-from .permissions import IsDoctor, IsPatientOfCase, IsDoctorOfCase, IsAdmin
+from .permissions import (
+    IsPatientOfCase, IsDoctorOfCase, IsAdmin, IsDoctor
+)
+
 from classifier.classifier import Classifier
 from classifier.progress_state import update_progress, get_progress, reset_progress
+from .audit_mixins import AuditLoggingMixin
+from .audit_utils import create_audit_log
 
 #region Configure logging
 logging.basicConfig(
@@ -42,7 +47,7 @@ logger = logging.getLogger(__name__)
 #endregion
 
 
-class MedicalCaseViewSet(viewsets.ModelViewSet):
+class MedicalCaseViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     """
     ViewSet for Medical Cases with role-based access control.
     
@@ -52,6 +57,7 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
     - Admins: Full access to all cases
     """
     queryset = MedicalCase.objects.select_related('patient', 'primary_doctor').prefetch_related('scans')
+    audit_log_model_name = "MEDICAL_CASE"
     
     def get_serializer_class(self):
         """Return appropriate serializer based on action."""
@@ -102,7 +108,6 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(cases, many=True)
         return Response(serializer.data)
 
-
 class ScanUploadView(APIView):
     """
     Handle chest scan uploads with automatic AI analysis.
@@ -123,7 +128,7 @@ class ScanUploadView(APIView):
         file_obj = ContentFile(buffer.tobytes())
         getattr(instance, field_name).save(filename, file_obj, save=False)
 
-    def _run_ai_analysis(self, scan):
+    def _run_ai_analysis(self, scan, actor):
         """Run AI analysis on scan using all active models."""
         # Get all the active models
         model_versions = ModelVersion.objects.filter(is_active=True)
@@ -158,11 +163,25 @@ class ScanUploadView(APIView):
                     analysis.heatmap_type = "gradcam"
                 
                 analysis.save()
+                
+                create_audit_log(
+                    actor,
+                    "RAN_AI_ANALYSIS",
+                    {
+                        "actor_id": actor.id,
+                        "scan_id": scan.id,
+                        "model_id": model_version.id,
+                        "model_name": model_version.model_name,
+                        "result": predicted_class,
+                        "confidence": confidence
+                    }
+                )
+                
                 logger.info(f"Raw probs from {model_version.model_name}: {probabilities}")
                 
                 probabilities = np.array([
-                    probabilities.get(1, 0.0),
-                    probabilities.get(0, 0.0),
+                    probabilities.get(1, 0.0), # pneumonia
+                    probabilities.get(0, 0.0), # normal
                 ])
                 
                 analyses.append({
@@ -175,6 +194,17 @@ class ScanUploadView(APIView):
                 
             except Exception as e:
                 logger.error(f"Error with model {model_version.model_name}: {str(e)}")
+                create_audit_log(
+                    actor,
+                    "AI_ANALYSIS_FAILED",
+                    {
+                        "actor_id": actor.id,
+                        "scan_id": scan.id,
+                        "model_id": model_version.id,
+                        "model_name": model_version.model_name,
+                        "error": str(e)
+                    }
+                )
                 return {
                     'success': False,
                     'error': f"Analysis failed with model {model_version.model_name}"
@@ -182,7 +212,7 @@ class ScanUploadView(APIView):
         
         return {'success': True, 'analyses': analyses}
     
-    def _create_ensemble_result(self, scan, analysis_results):
+    def _create_ensemble_result(self, scan, analysis_results, actor):
         """Create ensemble prediction from individual analyses."""
         all_probs = []
         model_weights = []
@@ -223,11 +253,23 @@ class ScanUploadView(APIView):
         
         # Link source analyses
         ensemble.source_analyses.set(source_analyses)
+        create_audit_log(
+            actor,
+            "CREATED_ENSEMBLE",
+            {
+                "actor_id": actor.id,
+                "scan_id": scan.id,
+                "ensemble_id": ensemble.id,
+                "method": "weighted_accuracy",
+                "result": final_label
+            }
+        )
         
         return ensemble
     
     def post(self, request, case_id):
         """Upload and analyze a chest scan."""
+        actor = request.user
         try:
             file = request.data.get("image")
             if not file:
@@ -238,7 +280,18 @@ class ScanUploadView(APIView):
             scan = ChestScan.objects.create(case=case, image_path=file)
             logger.info(f"Created new scan {scan.id} for case {case_id}")
             
-            analysis_results = self._run_ai_analysis(scan)
+            create_audit_log(
+                actor,
+                "UPLOADED_SCAN",
+                {
+                    "actor_id": actor.id,
+                    "scan_id": scan.id,
+                    "case_id": case.id,
+                    "patient_id": case.patient.id
+                }
+            )
+            
+            analysis_results = self._run_ai_analysis(scan, actor)
             if not analysis_results['success']:
                 return Response(
                     {"error": analysis_results['error']}, 
@@ -246,7 +299,7 @@ class ScanUploadView(APIView):
                 )
                 
             # Generate ensemble result
-            ensemble_result = self._create_ensemble_result(scan, analysis_results['analyses'])
+            ensemble_result = self._create_ensemble_result(scan, analysis_results['analyses'], actor)
             
             logger.info(f"Successfully processed scan {scan.id} with ensemble result: {ensemble_result.combined_prediction_label}")
             
@@ -261,13 +314,17 @@ class ScanUploadView(APIView):
 
         except Exception as e:
             logger.error(f"Unexpected error in scan upload: {str(e)}")
+            create_audit_log(
+                actor,
+                "UPLOAD_SCAN_FAILED",
+                {"actor_id": actor.id, "case_id": case_id, "error": str(e)}
+            )
             return Response(
                 {"error": "An unexpected error occurred during processing"}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-
-class DoctorAnnotationViewSet(viewsets.ModelViewSet):
+class DoctorAnnotationViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     """
     ViewSet for doctor annotations on scans.
     
@@ -276,6 +333,7 @@ class DoctorAnnotationViewSet(viewsets.ModelViewSet):
     """
     queryset = DoctorAnnotation.objects.select_related('doctor', 'scan__case').all()
     serializer_class = DoctorAnnotationSerializer
+    audit_log_model_name = "DOCTOR_ANNOTATION"
 
     def get_permissions(self):
         """Set permissions based on action."""
@@ -286,7 +344,7 @@ class DoctorAnnotationViewSet(viewsets.ModelViewSet):
         
         return [permission() for permission in permission_classes]
 
-class ChestScanViewSet(viewsets.ModelViewSet):
+class ChestScanViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     """
     ViewSet for Chest Scans.
     
@@ -297,6 +355,7 @@ class ChestScanViewSet(viewsets.ModelViewSet):
     """
     queryset = ChestScan.objects.select_related('case__patient', 'case__primary_doctor').prefetch_related('ai_analyses', 'annotations', 'ensemble_result')
     serializer_class = ChestScanSerializer
+    audit_log_model_name = "CHEST_SCAN"
 
     def get_permissions(self):
         """Set permissions based on action."""
@@ -319,15 +378,50 @@ class ChestScanViewSet(viewsets.ModelViewSet):
         return self.queryset # Admins see all scans
 
 
-class ModelVersionViewSet(viewsets.ModelViewSet):
+class ModelVersionViewSet(AuditLoggingMixin, viewsets.ModelViewSet):
     queryset = ModelVersion.objects.all()
     serializer_class = ModelVersionSerializer
     permission_classes = [ IsAdmin ]
     
-    def destroy(self, request, *args, **kwargs):
-        model_version = self.get_object()
-        path = model_version.storage_uri
-        logger.info(f"Deleting model version {model_version.id} at path: {path}")
+    audit_log_model_name = "MODEL_VERSION"
+    audit_log_name_field = "model_name"
+    
+    # def destroy(self, request, *args, **kwargs):
+    #     model_version = self.get_object()
+    #     path = model_version.storage_uri
+    #     logger.info(f"Deleting model version {model_version.id} at path: {path}")
+
+    #     # Delete file if it exists
+    #     if os.path.exists(path):
+    #         os.remove(path)
+    #         logger.info(f"Deleted model file: {path}")
+    #     else:
+    #         logger.warning(f"Model file not found: {path}")
+            
+    #     # Delete directory if it exists
+    #     dir_path = os.path.dirname(path)
+    #     if os.path.exists(dir_path):
+    #         try:
+    #             shutil.rmtree(dir_path)
+    #             logger.info(f"Deleted model directory: {dir_path}")
+    #         except Exception as e:
+    #             logger.error(f"Failed to delete model directory {dir_path}: {e}")
+    #     else:
+    #         logger.warning(f"Model directory not found: {dir_path}")
+
+    #     model_version.delete()
+    #     return Response(status=status.HTTP_204_NO_CONTENT)
+    def perform_destroy(self, instance):
+        """
+        Override perform_destroy to add custom file deletion *and*
+        manual logging.
+        """
+        actor = self.request.user
+        model_name = instance.model_name
+        model_id = instance.id
+        path = instance.storage_uri
+        
+        logger.info(f"Admin '{actor.username}' initiating delete for model {model_id} ({model_name}) at path: {path}")
 
         # Delete file if it exists
         if os.path.exists(path):
@@ -347,8 +441,20 @@ class ModelVersionViewSet(viewsets.ModelViewSet):
         else:
             logger.warning(f"Model directory not found: {dir_path}")
 
-        model_version.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        # --- Manual Log for custom destroy action ---
+        create_audit_log(
+            actor,
+            "DELETED_MODEL_VERSION",
+            {
+                "actor_id": actor.id,
+                "object_id": model_id,
+                "object_name": model_name,
+                "deleted_path": path
+            }
+        )
+        
+        # Finally, delete the instance from the DB
+        instance.delete()
 
     @action(detail=False, methods=["get"], permission_classes=[IsAdmin])
     def stats(self, request):
@@ -446,7 +552,7 @@ class StatsView(APIView):
 class TrainModelView(APIView):
     permission_classes = [IsAdmin]
 
-    def run_training(self, model_name='OwnV3', epochs=2, batch_size=16, learning_rate=0.0003, opt='adam'):
+    def run_training(self, actor, model_name='OwnV3', epochs=2, batch_size=16, learning_rate=0.0003, opt='adam'):
         try:
             logger.info("Starting training thread...")
             logger.info(f"Parameters: model_name={model_name}, epochs={epochs}, batch_size={batch_size}, learning_rate={learning_rate}")
@@ -472,9 +578,8 @@ class TrainModelView(APIView):
             final_checkpoint_path = classifier.best_checkpoint_path
 
             if final_checkpoint_path:
-                admin = User.objects.filter(role='admin').first()
-                ModelVersion.objects.create(
-                    uploaded_by_admin=admin,
+                new_model = ModelVersion.objects.create(
+                    uploaded_by_admin=actor,
                     model_name=model_name,
                     storage_uri=final_checkpoint_path,
                     description=f"Model trained with {epochs} epochs, batch size {batch_size}, learning rate {learning_rate}, optimizer {opt}.",
@@ -487,7 +592,18 @@ class TrainModelView(APIView):
                     },
                     is_active=True,
                 )
-                    
+                
+                create_audit_log(
+                    actor,
+                    "CREATED_MODEL_VERSION", # This is the same as the mixin!
+                    {
+                        "actor_id": actor.id,
+                        "object_id": new_model.id,
+                        "object_name": new_model.model_name,
+                        "source": "Training",
+                        "metrics": evaluate_results
+                    }
+                )
                 logger.info(f"[TRAIN] Model version saved at {final_checkpoint_path}")
             else:
                 logger.warning("[TRAIN] No checkpoint path found; model version not saved.")
@@ -496,17 +612,42 @@ class TrainModelView(APIView):
             classifier.save_history()
             logger.info(results)
         except Exception as e:
+            logger.error(f"Training failed: {e}")
             update_progress(status="error", message=str(e))
+            create_audit_log(
+                actor,
+                "MODEL_TRAINING_FAILED",
+                {
+                    "actor_id": actor.id,
+                    "model_name": model_name,
+                    "error": str(e)
+                }
+            )
 
     
     def post(self, request):
         reset_progress()
+        actor = request.user
         model_name = request.data.get('model_name', 'OwnV3')
         epochs = int(request.data.get('epochs', 2))
         batch_size = int(request.data.get('batch_size', 16))
         learning_rate = float(request.data.get('learning_rate', 0.0001))
         opt = request.data.get('optimizer', 'adam')
-        threading.Thread(target=self.run_training, daemon=True, args=(model_name, epochs, batch_size, learning_rate, opt)).start()
+        
+        create_audit_log(
+            actor,
+            "STARTED_MODEL_TRAINING",
+            {
+                "actor_id": actor.id,
+                "model_name": model_name,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "lr": learning_rate,
+                "optimizer": opt
+            }
+        )
+        
+        threading.Thread(target=self.run_training, daemon=True, args=(actor, model_name, epochs, batch_size, learning_rate, opt)).start()
         return Response({"status": "started"})
 
 
