@@ -87,43 +87,57 @@ By default, the frontend connects to the Django API at [http://127.0.0.1:8000](h
 ```
 masters-thesis/
 ├── backend/
-│   ├── api/                     # Django REST API
-│   │   ├── classifier/          # TensorFlow CNN & data pipeline
-│   │   │   ├── augment.py
-│   │   │   ├── classifier.py
-│   │   │   ├── config.py
-│   │   │   ├── checkpoints/     # Saved model weights
-│   │   │   ├── data/            # Training / validation datasets
-│   │   │   └── results/         # Training metrics, charts, confusion matrix
+│   ├── classifier/              # TensorFlow CNN & data pipeline
+│   │   ├── classifier.py        # Classifier definition, training loop
+│   │   ├── progress_state.py    # Training progress tracking
+│   │   ├── datasets/            # Training / validation datasets
+│   │   └── outputs/             # Training metrics, charts, confusion matrix, saved checkpoints, gradcam heatmaps
+│   ├── api/                     # App for main Django REST API
+│   │   ├── management/commands/seed_db.py     # Custom Django management command (seeding)
 │   │   ├── models.py            # Core database models
 │   │   ├── serializers.py       # DRF serializers
 │   │   ├── permissions.py       # Role-based access control
 │   │   ├── views.py             # API endpoints
+│   │   ├── audit_mixin.py       # Audit mixin for logging logic
+│   │   ├── audit_utils.py       # Audit utils
 │   │   └── urls.py              # URL routing
-│   ├── users/                   # Authentication and roles  (Admin/Doctor/Patient)
+│   ├── users/                   # App for Authentication and roles  (Admin/Doctor/Patient)
+│   │   ├── models.py            # User-related database models
+│   │   ├── serializers.py       # DRF serializers
+│   │   ├── permissions.py       # Role-based access control
+│   │   ├── views.py             # API endpoints
+│   │   └── urls.py              # URL routing
 │   ├── pneumonia_diagnosis/     # Django project settings & entry points
+│   │   ├── settings.py          # Project settings
+│   │   └── urls.py              # URL routing
+│   ├── frontend/                # App for serving frontend/static page requests via Django
 │   ├── media/                   # Uploaded scans, heatmaps
-│   ├── checkpoints/             # Trained model storage
 │   ├── static/                  # Compiled frontend files (for production)
-│   └── management/commands/     # Custom Django management commands (seeding)
+│   ├── db.sqlite3               # Development database
+│   └── manage.py                # Django management CLI
 │
 ├── frontend/
 │   ├── src/
 │   │   ├── lib/
 │   │   │   ├── components/      # Modular Svelte components
-│   │   │   │   ├── AdminDashboard/
-│   │   │   │   ├── DoctorDashboard/
-│   │   │   │   ├── PatientDashboard/
-│   │   │   │   └── Shared UI components
-│   │   │   ├── api.ts           # REST API client
-│   │   │   ├── auth.ts          # Authentication helpers
-│   │   │   └── types.ts         # Shared TypeScript types
+│   │   │   │   ├── AdminDashboard/       # Admin UI components
+│   │   │   │   ├── DoctorDashboard/      # Doctor UI components
+│   │   │   │   ├── PatientDashboard/     # Patient UI components
+│   │   │   │   └── Shared UI components  # Reusable UI blocks
+│   │   │   ├── api.ts              # REST API client
+│   │   │   ├── auth.ts             # Authentication helpers
+│   │   │   └── types.ts            # Shared TypeScript types
 │   │   ├── routes/              # SvelteKit routes (login, register, dashboard, etc.)
-│   │   └── app.html / app.css   # Global styles and root app
-│   ├── svelte.config.js
-│   ├── vite.config.ts
-│   └── package.json
+│   │   │   ├── +page.svelte        # Page component
+│   │   │   ├── +layout.svelte      # Layout component
+│   │   │   ├── load.ts             # Load function for route data
+│   │   │   └── +layout.ts          # Layout-level load logic
+│   │   └── app.html / app.css   # Root HTML template & global styles
+│   ├── svelte.config.js         # SvelteKit configuration
+│   ├── vite.config.ts           # Vite bundler configuration
+│   └── package.json             # Frontend dependencies & scripts
 │
-├── pyproject.toml               # Python project configuration
-└── README.md
+├── pyproject.toml   # Python project configuration
+├── .gitignore       # Git ignore rules
+└── README.md        # Project overview and documentation
 ```
