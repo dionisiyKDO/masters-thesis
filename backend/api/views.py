@@ -472,7 +472,7 @@ class AuditLogViewSet(viewsets.ModelViewSet):
     permission_classes = [ IsAdmin ]
     
     @action(detail=False, methods=["get"], permission_classes=[IsAdmin])
-    def recent_stats(self, request):
+    def recent_errors(self, request):
         recent_errors = AuditLog.objects.filter(action='SYSTEM_ERROR').count()
                 
         return Response({

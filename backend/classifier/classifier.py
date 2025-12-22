@@ -39,8 +39,9 @@ except ImportError:
 #region Setup env
 BASE_DIR = Path(__file__).resolve().parent
 
-DATA_DIR = BASE_DIR / "datasets" / "data"
+DATA_DIR = BASE_DIR / "datasets" / "data_pneumonia"
     # data/ - first final version
+    # data_pneumonia/ - original dataset
     # dataset_processed/ - augmented 50/50 balanced mixed
     # data_test/ - resplitted original
 
@@ -393,12 +394,10 @@ class Classifier:
                     y = Conv2D(filters, kernel_size, strides=stride, padding='same', kernel_regularizer='l2')(x)
                     y = BatchNormalization()(y)
                     y = LeakyReLU(alpha=0.01)(y)
-
                     y = Conv2D(filters, kernel_size, padding='same', kernel_regularizer='l2')(y)
                     y = BatchNormalization()(y)
 
                     # Shortcut connection
-                    # If strides > 1 or filter count changes, we need to project the shortcut.
                     if stride != 1 or x.shape[-1] != filters:
                         shortcut = Conv2D(filters, (1, 1), strides=stride, padding='same')(x)
                     else:
@@ -409,27 +408,23 @@ class Classifier:
                     out = LeakyReLU(alpha=0.01)(out)
                     return out
 
-                # --- Input & Stem ---
+                # Input Stem
                 inputs = Input(shape=self.img_shape)
                 x = Conv2D(32, (7, 7), strides=2, padding='same')(inputs)
                 x = BatchNormalization()(x)
                 x = LeakyReLU(alpha=0.01)(x)
                 x = MaxPooling2D((3, 3), strides=2, padding='same')(x)
-
-                # --- Residual Blocks ---
+                # Residual Blocks
                 x = residual_block(x, filters=32)
                 x = residual_block(x, filters=64, stride=2) 
                 x = residual_block(x, filters=128, stride=2)
                 x = residual_block(x, filters=256, stride=2)
-
-                # --- Classifier Head ---
+                # Classifier Head
                 x = GlobalAveragePooling2D()(x)
                 x = Dense(128, activation='relu')(x)
                 x = Dropout(0.6)(x)
 
-                outputs = Dense(1, activation='sigmoid', name='output')(x) if self.num_classes == 2 \
-                    else Dense(self.num_classes, activation='softmax', name='output')(x)
-
+                outputs = Dense(1, activation='sigmoid', name='output')(x) 
                 return Model(inputs, outputs, name='OwnV3')
 
             def build_ownv4():
@@ -1473,6 +1468,10 @@ def ensemble_testing():
 
 def model_testing():
     data_dir = DATA_DIR
+    models = [
+        'OwnV4', 'OwnV3', 'OwnV2', 'OwnV1', 
+        'AlexNet', 'VGG16', 'VGG19', 'ResNet50', 'DenseNet121', 'MobileNetV2',
+    ]
     
     classifier = Classifier(
         model_name='OwnV3',
@@ -1483,33 +1482,33 @@ def model_testing():
     
     # Train the model
     # results = classifier.train(
-    #     epochs=2,
+    #     epochs=70,
     #     batch_size=16, 
     #     learning_rate=0.0003,
     # )
     # classifier.save_history()
     # logger.info(results)
     
-    if classifier.model is None:
-        classifier.load_model(f"{CHECKPOINT_DIR}/Saved/OwnV3.epoch50-val_acc0.9830.hdf5")
-    if classifier.history is None:
-        classifier.load_history()
+    # if classifier.model is None:
+    #     classifier.load_model(f"{CHECKPOINT_DIR}/Saved/OwnV3.epoch50-val_acc0.9830.hdf5")
+    # if classifier.history is None:
+    #     classifier.load_history()
     
     
     # Plotting
-    classifier.plot_confusion_matrix()
-    classifier.plot_training_history()
+    # classifier.plot_confusion_matrix()
+    # classifier.plot_training_history()
     classifier.plot_data_distribution()
-    classifier.plot_images_example()
-    classifier.plot_model_architecture()
+    # classifier.plot_images_example()
+    # classifier.plot_model_architecture()
     
     
     # Evaluate model
-    results = classifier.evaluate_model()
-    logger.info("Evaluation results:")
-    for k, v in results.items():
-        if isinstance(v, (float, int)) and v is not None:
-            logger.info(f"  {k}: {v:.4f}")
+    # results = classifier.evaluate_model()
+    # logger.info("Evaluation results:")
+    # for k, v in results.items():
+    #     if isinstance(v, (float, int)) and v is not None:
+    #         logger.info(f"  {k}: {v:.4f}")
     
     
     # Image prediction / heatmap testing
@@ -1517,11 +1516,11 @@ def model_testing():
     # OwnV3only - backend/api/classifier/data/train/PNEUMONIA/PNEUMONIA_person1921_bacteria_4828_aug1_rot-6.4_hflip_bright0.83_cont1.18_blur.jpeg
     # GoodMap   - backend/api/classifier/data/train/PNEUMONIA/PNEUMONIA_person418_virus_852_aug1_rot11.9_hflip_bright0.98_color0.91.jpeg
     
-    image_to_test = f'{DATA_DIR}/train/PNEUMONIA/PNEUMONIA_person1929_bacteria_4839_aug1_rot14.8_bright0.88_cont1.08_blur_color0.94.jpeg'
-    predicted_class, confidence, _ = classifier.predict(image_to_test)
+    # image_to_test = f'{DATA_DIR}/train/PNEUMONIA/PNEUMONIA_person1929_bacteria_4839_aug1_rot14.8_bright0.88_cont1.08_blur_color0.94.jpeg'
+    # predicted_class, confidence, _ = classifier.predict(image_to_test)
     
-    classifier.generate_gradcam_heatmap(image_to_test)
-    classifier.generate_gradcam_heatmap_multiple_layers(image_to_test)
+    # classifier.generate_gradcam_heatmap(image_to_test)
+    # classifier.generate_gradcam_heatmap_multiple_layers(image_to_test)
 
 
 if __name__ == "__main__":
