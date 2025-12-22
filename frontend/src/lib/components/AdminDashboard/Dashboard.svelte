@@ -58,7 +58,7 @@
 	}
 	async function fetchAuditLogsStats(): Promise<any | null> {
 		try {
-			const response = await api.get('/auditlogs/recent_stats/');
+			const response = await api.get('/auditlogs/recent_errors/');
 			if (!response.ok) throw new Error('Failed to fetch auditlogs stats.');
 			const data = await response.json();
             auditLogsStats = data;

@@ -463,7 +463,7 @@
         {#if trainingResults}
             <!-- Final Metrics -->
             <div class="bg-card rounded-lg shadow-sm border border-border overflow-hidden px-6 py-5">
-                <div class="grid grid-cols-2 md:grid-cols-5 gap-3 pt-1">
+                <div class="grid grid-cols-2 md:grid-cols-6 gap-3 pt-1">
                     <div class="bg-muted/30 rounded-lg p-3 border border-border">
                         <div class="text-xs text-muted-foreground mb-1">Final Accuracy</div>
                         <div class="text-2xl font-bold text-foreground">{(trainingResults.acc * 100)?.toFixed(2)}%</div>
@@ -491,14 +491,14 @@
                         <div class="text-xs text-muted-foreground mb-1">AUC</div>
                         <div class="text-xl font-semibold text-foreground">{trainingResults.auc?.toFixed(4)}</div>
                     </div>
-                    <div class="bg-muted/30 rounded-lg p-4 border border-border">
+                    <!-- <div class="bg-muted/30 rounded-lg p-4 border border-border">
                         <div class="text-xs text-muted-foreground mb-1">Sensitivity</div>
                         <div class="text-xl font-semibold text-foreground">{(trainingResults.recall * 100)?.toFixed(2)}%</div>
                     </div>
                     <div class="bg-muted/30 rounded-lg p-4 border border-border">
                         <div class="text-xs text-muted-foreground mb-1">Specificity</div>
                         <div class="text-xl font-semibold text-foreground">{( (1 - (1 - trainingResults.recall)) * 100 )?.toFixed(2)}%</div>
-                    </div> 
+                    </div>  -->
                 </div>
             </div>
         {/if}

@@ -1,9 +1,9 @@
 <script lang="ts">
     import { user, logout } from '$lib/auth';
 
-    const links = [
-        { name: 'Home', href: '/' },
-    ];
+    // const links = [
+    //     { name: 'Home', href: '/' },
+    // ];
 </script>
 
 <header class="px-6 py-3 mb-6 bg-background border-b border-border selection:bg-primary selection:text-primary-foreground">
@@ -12,13 +12,14 @@
             <a href="/" class="text-xl font-bold">{$user?.username}'s dashboard</a>
         {:else}
             <a href="/" class="text-xl font-bold">Home</a>
+            
         {/if}
         
         <div class="flex items-center gap-4">
             
-            {#each links as link}
+            <!-- {#each links as link}
                 <a href={link.href}>{link.name}</a>
-            {/each}
+            {/each} -->
 
             <div class="border-l border-[--border]">
                 {#if $user}
